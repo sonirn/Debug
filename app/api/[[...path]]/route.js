@@ -268,7 +268,7 @@ export async function GET(request) {
       const jobId = pathParts[1];
       
       try {
-        const job = jobs.get(jobId);
+        const job = await dbService.getJob(jobId);
         
         if (!job) {
           return NextResponse.json({ error: 'Job not found' }, { status: 404 });
