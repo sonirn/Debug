@@ -5,9 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import AdmZip from 'adm-zip';
 import xml2js from 'xml2js';
 import { spawn } from 'child_process';
-
-// Store active jobs in memory (in production, use Redis or database)
-const activeJobs = new Map();
+import { adminDb } from '@/lib/firebase-admin';
 
 // Ensure temp directories exist
 const tempDir = path.join(process.cwd(), 'temp');
@@ -27,23 +25,42 @@ async function ensureTempDirs() {
 // Initialize temp directories
 ensureTempDirs();
 
-function updateJobProgress(jobId, progress, currentStep, logs = []) {
-  const job = activeJobs.get(jobId);
-  if (job) {
-    job.progress = progress;
-    job.currentStep = currentStep;
-    job.logs = [...(job.logs || []), ...logs];
-    job.lastUpdated = new Date().toISOString();
-    activeJobs.set(jobId, job);
+async function updateJobProgress(jobId, progress, currentStep, logs = []) {
+  try {
+    const jobRef = adminDb.collection('apk_jobs').doc(jobId);
+    const jobDoc = await jobRef.get();
+    
+    if (jobDoc.exists) {
+      const existingData = jobDoc.data();
+      const updatedLogs = [...(existingData.logs || []), ...logs];
+      
+      await jobRef.update({
+        progress,
+        currentStep,
+        logs: updatedLogs,
+        lastUpdated: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Error updating job progress:', error);
   }
 }
 
-function addJobLog(jobId, message) {
-  const job = activeJobs.get(jobId);
-  if (job) {
-    job.logs = job.logs || [];
-    job.logs.push(`${new Date().toISOString()}: ${message}`);
-    activeJobs.set(jobId, job);
+async function addJobLog(jobId, message) {
+  try {
+    const jobRef = adminDb.collection('apk_jobs').doc(jobId);
+    const jobDoc = await jobRef.get();
+    
+    if (jobDoc.exists) {
+      const existingData = jobDoc.data();
+      const updatedLogs = [...(existingData.logs || []), `${new Date().toISOString()}: ${message}`];
+      
+      await jobRef.update({
+        logs: updatedLogs
+      });
+    }
+  } catch (error) {
+    console.error('Error adding job log:', error);
   }
 }
 
@@ -112,8 +129,8 @@ function createDebugKeystore() {
 
 async function processApkToDebugMode(apkPath, outputPath, jobId) {
   try {
-    updateJobProgress(jobId, 10, 'Validating APK Structure...');
-    addJobLog(jobId, 'Starting APK validation');
+    await updateJobProgress(jobId, 10, 'Validating APK Structure...');
+    await addJobLog(jobId, 'Starting APK validation');
     
     // Read and validate APK
     const apkBuffer = await fs.readFile(apkPath);
@@ -126,8 +143,8 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
       throw new Error('Invalid APK: AndroidManifest.xml not found');
     }
     
-    updateJobProgress(jobId, 20, 'Extracting APK Contents...');
-    addJobLog(jobId, 'Extracting APK contents');
+    await updateJobProgress(jobId, 20, 'Extracting APK Contents...');
+    await addJobLog(jobId, 'Extracting APK contents');
     
     // Create working directory
     const workDir = path.join(tempDir, `work_${jobId}`);
@@ -136,8 +153,8 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     // Extract APK
     zip.extractAllTo(workDir, true);
     
-    updateJobProgress(jobId, 30, 'Parsing AndroidManifest.xml...');
-    addJobLog(jobId, 'Reading AndroidManifest.xml');
+    await updateJobProgress(jobId, 30, 'Parsing AndroidManifest.xml...');
+    await addJobLog(jobId, 'Reading AndroidManifest.xml');
     
     // Read AndroidManifest.xml
     const manifestPath = path.join(workDir, 'AndroidManifest.xml');
@@ -146,16 +163,15 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     try {
       // Try to read as binary first (compiled manifest)
       manifestContent = await fs.readFile(manifestPath);
-      addJobLog(jobId, 'AndroidManifest.xml is in binary format');
+      await addJobLog(jobId, 'AndroidManifest.xml is in binary format');
     } catch (error) {
       throw new Error('Could not read AndroidManifest.xml');
     }
     
-    updateJobProgress(jobId, 40, 'Applying Debug Modifications...');
-    addJobLog(jobId, 'Modifying AndroidManifest.xml for debug mode');
+    await updateJobProgress(jobId, 40, 'Applying Debug Modifications...');
+    await addJobLog(jobId, 'Modifying AndroidManifest.xml for debug mode');
     
-    // Since we're dealing with binary XML, we'll need to decompile first
-    // For now, we'll create a basic debug manifest and inject it
+    // Since we're dealing with binary XML, we'll create a basic debug manifest
     const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.debug.converted">
@@ -188,8 +204,8 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     // Write debug manifest
     await fs.writeFile(manifestPath, debugManifest);
     
-    updateJobProgress(jobId, 50, 'Adding Network Security Config...');
-    addJobLog(jobId, 'Creating network security configuration');
+    await updateJobProgress(jobId, 50, 'Adding Network Security Config...');
+    await addJobLog(jobId, 'Creating network security configuration');
     
     // Create res/xml directory if it doesn't exist
     const resXmlDir = path.join(workDir, 'res', 'xml');
@@ -199,8 +215,8 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     const networkConfigPath = path.join(resXmlDir, 'network_security_config.xml');
     await fs.writeFile(networkConfigPath, createNetworkSecurityConfig());
     
-    updateJobProgress(jobId, 60, 'Injecting Debug Features...');
-    addJobLog(jobId, 'Adding debug resources');
+    await updateJobProgress(jobId, 60, 'Injecting Debug Features...');
+    await addJobLog(jobId, 'Adding debug resources');
     
     // Create debug resources
     const resValuesDir = path.join(workDir, 'res', 'values');
@@ -209,8 +225,8 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     const debugStringsPath = path.join(resValuesDir, 'debug_strings.xml');
     await fs.writeFile(debugStringsPath, createDebugKeystore());
     
-    updateJobProgress(jobId, 70, 'Rebuilding APK...');
-    addJobLog(jobId, 'Repackaging APK');
+    await updateJobProgress(jobId, 70, 'Rebuilding APK...');
+    await addJobLog(jobId, 'Repackaging APK');
     
     // Create new APK
     const newZip = new AdmZip();
@@ -234,22 +250,22 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     
     await addDirectoryToZip(workDir);
     
-    updateJobProgress(jobId, 80, 'Signing with Debug Certificate...');
-    addJobLog(jobId, 'Applying debug signature');
+    await updateJobProgress(jobId, 80, 'Signing with Debug Certificate...');
+    await addJobLog(jobId, 'Applying debug signature');
     
     // Write the new APK
     const debugApkPath = path.join(outputDir, `debug_${path.basename(apkPath)}`);
     newZip.writeZip(debugApkPath);
     
-    updateJobProgress(jobId, 90, 'Finalizing Debug APK...');
-    addJobLog(jobId, 'Finalizing debug APK');
+    await updateJobProgress(jobId, 90, 'Finalizing Debug APK...');
+    await addJobLog(jobId, 'Finalizing debug APK');
     
     // Get file size
     const stats = await fs.stat(debugApkPath);
     const fileSizeKB = Math.round(stats.size / 1024);
     
-    updateJobProgress(jobId, 100, 'Conversion Complete!');
-    addJobLog(jobId, `Debug APK created successfully: ${fileSizeKB}KB`);
+    await updateJobProgress(jobId, 100, 'Conversion Complete!');
+    await addJobLog(jobId, `Debug APK created successfully: ${fileSizeKB}KB`);
     
     // Clean up work directory
     await fs.rm(workDir, { recursive: true, force: true });
@@ -261,7 +277,7 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     };
     
   } catch (error) {
-    addJobLog(jobId, `Error: ${error.message}`);
+    await addJobLog(jobId, `Error: ${error.message}`);
     throw error;
   }
 }
@@ -281,19 +297,27 @@ export async function GET(request) {
     // Handle status endpoint
     if (endpoint === 'status' && pathParts[1]) {
       const jobId = pathParts[1];
-      const job = activeJobs.get(jobId);
       
-      if (!job) {
-        return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+      try {
+        const jobDoc = await adminDb.collection('apk_jobs').doc(jobId).get();
+        
+        if (!jobDoc.exists) {
+          return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+        }
+        
+        const jobData = jobDoc.data();
+        
+        return NextResponse.json({
+          status: jobData.status,
+          progress: jobData.progress,
+          currentStep: jobData.currentStep,
+          logs: jobData.logs || [],
+          result: jobData.result
+        });
+      } catch (error) {
+        console.error('Error fetching job status:', error);
+        return NextResponse.json({ error: 'Failed to fetch job status' }, { status: 500 });
       }
-      
-      return NextResponse.json({
-        status: job.status,
-        progress: job.progress,
-        currentStep: job.currentStep,
-        logs: job.logs || [],
-        result: job.result
-      });
     }
     
     // Handle download endpoint
@@ -356,14 +380,21 @@ export async function POST(request) {
       // Generate job ID
       const jobId = uuidv4();
       
-      // Initialize job
-      activeJobs.set(jobId, {
-        status: 'processing',
-        progress: 0,
-        currentStep: 'Starting...',
-        logs: [],
-        startTime: new Date().toISOString()
-      });
+      // Initialize job in Firebase
+      try {
+        await adminDb.collection('apk_jobs').doc(jobId).set({
+          status: 'processing',
+          progress: 0,
+          currentStep: 'Starting...',
+          logs: [],
+          startTime: new Date().toISOString(),
+          fileName: apkFile.name,
+          fileSize: apkFile.size
+        });
+      } catch (error) {
+        console.error('Error creating job in Firebase:', error);
+        return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
+      }
       
       // Save uploaded file
       const uploadPath = path.join(uploadsDir, `${jobId}.apk`);
@@ -372,23 +403,27 @@ export async function POST(request) {
       
       // Process APK in background
       processApkToDebugMode(uploadPath, outputDir, jobId)
-        .then(result => {
-          const job = activeJobs.get(jobId);
-          if (job) {
-            job.status = 'completed';
-            job.result = result;
-            job.completedTime = new Date().toISOString();
-            activeJobs.set(jobId, job);
+        .then(async (result) => {
+          try {
+            await adminDb.collection('apk_jobs').doc(jobId).update({
+              status: 'completed',
+              result: result,
+              completedTime: new Date().toISOString()
+            });
+          } catch (error) {
+            console.error('Error updating job completion:', error);
           }
         })
-        .catch(error => {
+        .catch(async (error) => {
           console.error('Processing error:', error);
-          const job = activeJobs.get(jobId);
-          if (job) {
-            job.status = 'error';
-            job.error = error.message;
-            job.completedTime = new Date().toISOString();
-            activeJobs.set(jobId, job);
+          try {
+            await adminDb.collection('apk_jobs').doc(jobId).update({
+              status: 'error',
+              error: error.message,
+              completedTime: new Date().toISOString()
+            });
+          } catch (updateError) {
+            console.error('Error updating job error:', updateError);
           }
         });
       
