@@ -8,6 +8,10 @@ import os
 import sys
 import requests
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv('/app/.env')
 
 # Add the app directory to Python path
 sys.path.append('/app')
