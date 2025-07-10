@@ -353,8 +353,8 @@ export async function POST(request) {
       // Generate job ID
       const jobId = uuidv4();
       
-      // Initialize job in memory
-      jobs.set(jobId, {
+      // Initialize job in database
+      await dbService.saveJob(jobId, {
         status: 'processing',
         progress: 0,
         currentStep: 'Starting...',
