@@ -26,30 +26,11 @@ async function ensureTempDirs() {
 ensureTempDirs();
 
 async function updateJobProgress(jobId, progress, currentStep, logs = []) {
-  try {
-    const job = jobs.get(jobId);
-    if (job) {
-      job.progress = progress;
-      job.currentStep = currentStep;
-      job.logs = [...(job.logs || []), ...logs];
-      job.lastUpdated = new Date().toISOString();
-      jobs.set(jobId, job);
-    }
-  } catch (error) {
-    console.error('Error updating job progress:', error);
-  }
+  await dbService.updateJobProgress(jobId, progress, currentStep, logs);
 }
 
 async function addJobLog(jobId, message) {
-  try {
-    const job = jobs.get(jobId);
-    if (job) {
-      job.logs = [...(job.logs || []), `${new Date().toISOString()}: ${message}`];
-      jobs.set(jobId, job);
-    }
-  } catch (error) {
-    console.error('Error adding job log:', error);
-  }
+  await dbService.addJobLog(jobId, message);
 }
 
 async function executeCommand(command, args, workingDir = null) {
