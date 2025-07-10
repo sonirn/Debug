@@ -29,19 +29,13 @@ ensureTempDirs();
 
 async function updateJobProgress(jobId, progress, currentStep, logs = []) {
   try {
-    const jobRef = doc(db, 'apk_jobs', jobId);
-    const jobDoc = await getDoc(jobRef);
-    
-    if (jobDoc.exists()) {
-      const existingData = jobDoc.data();
-      const updatedLogs = [...(existingData.logs || []), ...logs];
-      
-      await updateDoc(jobRef, {
-        progress,
-        currentStep,
-        logs: updatedLogs,
-        lastUpdated: new Date().toISOString()
-      });
+    const job = jobs.get(jobId);
+    if (job) {
+      job.progress = progress;
+      job.currentStep = currentStep;
+      job.logs = [...(job.logs || []), ...logs];
+      job.lastUpdated = new Date().toISOString();
+      jobs.set(jobId, job);
     }
   } catch (error) {
     console.error('Error updating job progress:', error);
@@ -50,16 +44,10 @@ async function updateJobProgress(jobId, progress, currentStep, logs = []) {
 
 async function addJobLog(jobId, message) {
   try {
-    const jobRef = doc(db, 'apk_jobs', jobId);
-    const jobDoc = await getDoc(jobRef);
-    
-    if (jobDoc.exists()) {
-      const existingData = jobDoc.data();
-      const updatedLogs = [...(existingData.logs || []), `${new Date().toISOString()}: ${message}`];
-      
-      await updateDoc(jobRef, {
-        logs: updatedLogs
-      });
+    const job = jobs.get(jobId);
+    if (job) {
+      job.logs = [...(job.logs || []), `${new Date().toISOString()}: ${message}`];
+      jobs.set(jobId, job);
     }
   } catch (error) {
     console.error('Error adding job log:', error);
