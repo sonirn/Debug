@@ -307,6 +307,16 @@ export async function GET(request) {
       }
     }
     
+    // Handle stats endpoint
+    if (endpoint === 'stats') {
+      try {
+        const stats = await dbService.getJobStats();
+        return NextResponse.json(stats);
+      } catch (error) {
+        return NextResponse.json({ error: 'Failed to get stats' }, { status: 500 });
+      }
+    }
+    
     return NextResponse.json({ error: 'Invalid endpoint' }, { status: 400 });
   } catch (error) {
     console.error('API Error:', error);
