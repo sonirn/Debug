@@ -254,8 +254,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Firebase Firestore integration"
+  current_focus: []
   stuck_tasks:
     - "Firebase Firestore integration"
   test_all: false
