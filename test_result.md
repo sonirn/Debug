@@ -101,3 +101,111 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "APK Debug Mode Converter backend API testing - Convert APK files to debug mode with all debugging features enabled"
+
+backend:
+  - task: "POST /api/convert endpoint - APK file upload and job creation"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Backend API endpoint implemented with file upload validation, job creation, and APK processing pipeline. Needs comprehensive testing."
+
+  - task: "GET /api/status/{jobId} endpoint - Job progress tracking"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Status endpoint implemented with progress tracking, logs, and job state management. Needs testing for various job states."
+
+  - task: "GET /api/download/{fileName} endpoint - File download"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Download endpoint implemented with proper file serving and headers. Needs testing for file existence and download functionality."
+
+  - task: "APK processing pipeline - Debug mode conversion"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Complete APK processing pipeline with AdmZip, xml2js, manifest modification, and debug features injection. Needs testing for APK validation and processing steps."
+
+  - task: "File validation and error handling"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "File type validation (.apk), size limits (100MB), and error handling implemented. Needs testing for edge cases and validation scenarios."
+
+  - task: "Job management and memory storage"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "In-memory job storage using Map, job progress tracking, and cleanup implemented. Needs testing for job lifecycle management."
+
+frontend:
+  - task: "APK file upload interface"
+    implemented: true
+    working: "NA"
+    file: "/app/app/page.js"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Frontend implementation not tested as per instructions - backend testing only."
+
+metadata:
+  created_by: "testing_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "POST /api/convert endpoint - APK file upload and job creation"
+    - "GET /api/status/{jobId} endpoint - Job progress tracking"
+    - "GET /api/download/{fileName} endpoint - File download"
+    - "APK processing pipeline - Debug mode conversion"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "testing"
+    message: "Starting comprehensive backend API testing for APK Debug Mode Converter. Will test all three main endpoints, file validation, job management, and APK processing pipeline. Focus on success cases and error scenarios."
