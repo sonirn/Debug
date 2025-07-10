@@ -19,11 +19,41 @@ sys.path.append('/app')
 def test_firebase_admin_import():
     """Test if Firebase Admin SDK can be imported"""
     try:
+        # Import from the actual file location
+        import sys
+        sys.path.append('/app')
+        
+        # Try importing the firebase-admin module directly first
+        import firebase_admin
+        print("✅ Firebase Admin SDK module available")
+        
+        # Now try importing our custom firebase-admin configuration
         from lib.firebase_admin import adminDb
-        print("✅ Firebase Admin SDK imported successfully")
+        print("✅ Firebase Admin SDK imported successfully from lib.firebase_admin")
         return True
-    except Exception as e:
+    except ImportError as e:
         print(f"❌ Firebase Admin SDK import failed: {e}")
+        
+        # Try to import firebase-admin directly to see if it's installed
+        try:
+            import firebase_admin
+            print("✅ Firebase Admin SDK is installed")
+            print("❌ But lib.firebase_admin import failed - checking file...")
+            
+            # Check if the file exists
+            import os
+            if os.path.exists('/app/lib/firebase-admin.js'):
+                print("✅ /app/lib/firebase-admin.js exists (JavaScript file)")
+                print("❌ This is a JavaScript file, not Python - that's the issue!")
+            else:
+                print("❌ /app/lib/firebase-admin.js does not exist")
+                
+        except ImportError:
+            print("❌ Firebase Admin SDK is not installed")
+        
+        return False
+    except Exception as e:
+        print(f"❌ Firebase Admin SDK import failed with unexpected error: {e}")
         return False
 
 def test_firebase_connection():
