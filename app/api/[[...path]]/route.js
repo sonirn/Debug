@@ -374,22 +374,16 @@ export async function POST(request) {
       // Generate job ID
       const jobId = uuidv4();
       
-      // Initialize job in Firebase
-      try {
-        const jobRef = doc(db, 'apk_jobs', jobId);
-        await setDoc(jobRef, {
-          status: 'processing',
-          progress: 0,
-          currentStep: 'Starting...',
-          logs: [],
-          startTime: new Date().toISOString(),
-          fileName: apkFile.name,
-          fileSize: apkFile.size
-        });
-      } catch (error) {
-        console.error('Error creating job in Firebase:', error);
-        return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
-      }
+      // Initialize job in memory
+      jobs.set(jobId, {
+        status: 'processing',
+        progress: 0,
+        currentStep: 'Starting...',
+        logs: [],
+        startTime: new Date().toISOString(),
+        fileName: apkFile.name,
+        fileSize: apkFile.size
+      });
       
       // Save uploaded file
       const uploadPath = path.join(uploadsDir, `${jobId}.apk`);
@@ -400,12 +394,13 @@ export async function POST(request) {
       processApkToDebugMode(uploadPath, outputDir, jobId)
         .then(async (result) => {
           try {
-            const jobRef = doc(db, 'apk_jobs', jobId);
-            await updateDoc(jobRef, {
-              status: 'completed',
-              result: result,
-              completedTime: new Date().toISOString()
-            });
+            const job = jobs.get(jobId);
+            if (job) {
+              job.status = 'completed';
+              job.result = result;
+              job.completedTime = new Date().toISOString();
+              jobs.set(jobId, job);
+            }
           } catch (error) {
             console.error('Error updating job completion:', error);
           }
@@ -413,12 +408,13 @@ export async function POST(request) {
         .catch(async (error) => {
           console.error('Processing error:', error);
           try {
-            const jobRef = doc(db, 'apk_jobs', jobId);
-            await updateDoc(jobRef, {
-              status: 'error',
-              error: error.message,
-              completedTime: new Date().toISOString()
-            });
+            const job = jobs.get(jobId);
+            if (job) {
+              job.status = 'error';
+              job.error = error.message;
+              job.completedTime = new Date().toISOString();
+              jobs.set(jobId, job);
+            }
           } catch (updateError) {
             console.error('Error updating job error:', updateError);
           }
