@@ -137,15 +137,18 @@ backend:
 
   - task: "GET /api/download/{fileName} endpoint - File download"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/app/api/[[...path]]/route.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "testing"
         comment: "Download endpoint implemented with proper file serving and headers. Needs testing for file existence and download functionality."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: GET /api/download/{fileName} works perfectly. Serves APK files with correct Content-Type (application/vnd.android.package-archive), Content-Disposition headers for download, and proper Content-Length. Returns 404 for non-existent files."
 
   - task: "APK processing pipeline - Debug mode conversion"
     implemented: true
