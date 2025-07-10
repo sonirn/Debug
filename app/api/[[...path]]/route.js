@@ -300,9 +300,10 @@ export async function GET(request) {
       const jobId = pathParts[1];
       
       try {
-        const jobDoc = await adminDb.collection('apk_jobs').doc(jobId).get();
+        const jobRef = doc(db, 'apk_jobs', jobId);
+        const jobDoc = await getDoc(jobRef);
         
-        if (!jobDoc.exists) {
+        if (!jobDoc.exists()) {
           return NextResponse.json({ error: 'Job not found' }, { status: 404 });
         }
         
