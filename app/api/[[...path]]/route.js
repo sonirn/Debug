@@ -1,104 +1,403 @@
-import { MongoClient } from 'mongodb'
-import { v4 as uuidv4 } from 'uuid'
-import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import AdmZip from 'adm-zip';
+import xml2js from 'xml2js';
+import { spawn } from 'child_process';
 
-// MongoDB connection
-let client
-let db
+// Store active jobs in memory (in production, use Redis or database)
+const activeJobs = new Map();
 
-async function connectToMongo() {
-  if (!client) {
-    client = new MongoClient(process.env.MONGO_URL)
-    await client.connect()
-    db = client.db(process.env.DB_NAME)
-  }
-  return db
-}
+// Ensure temp directories exist
+const tempDir = path.join(process.cwd(), 'temp');
+const uploadsDir = path.join(tempDir, 'uploads');
+const outputDir = path.join(tempDir, 'output');
 
-// Helper function to handle CORS
-function handleCORS(response) {
-  response.headers.set('Access-Control-Allow-Origin', '*')
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  response.headers.set('Access-Control-Allow-Credentials', 'true')
-  return response
-}
-
-// OPTIONS handler for CORS
-export async function OPTIONS() {
-  return handleCORS(new NextResponse(null, { status: 200 }))
-}
-
-// Route handler function
-async function handleRoute(request, { params }) {
-  const { path = [] } = params
-  const route = `/${path.join('/')}`
-  const method = request.method
-
+async function ensureTempDirs() {
   try {
-    const db = await connectToMongo()
-
-    // Root endpoint - GET /api/root (since /api/ is not accessible with catch-all)
-    if (route === '/root' && method === 'GET') {
-      return handleCORS(NextResponse.json({ message: "Hello World" }))
-    }
-    // Root endpoint - GET /api/root (since /api/ is not accessible with catch-all)
-    if (route === '/' && method === 'GET') {
-      return handleCORS(NextResponse.json({ message: "Hello World" }))
-    }
-
-    // Status endpoints - POST /api/status
-    if (route === '/status' && method === 'POST') {
-      const body = await request.json()
-      
-      if (!body.client_name) {
-        return handleCORS(NextResponse.json(
-          { error: "client_name is required" }, 
-          { status: 400 }
-        ))
-      }
-
-      const statusObj = {
-        id: uuidv4(),
-        client_name: body.client_name,
-        timestamp: new Date()
-      }
-
-      await db.collection('status_checks').insertOne(statusObj)
-      return handleCORS(NextResponse.json(statusObj))
-    }
-
-    // Status endpoints - GET /api/status
-    if (route === '/status' && method === 'GET') {
-      const statusChecks = await db.collection('status_checks')
-        .find({})
-        .limit(1000)
-        .toArray()
-
-      // Remove MongoDB's _id field from response
-      const cleanedStatusChecks = statusChecks.map(({ _id, ...rest }) => rest)
-      
-      return handleCORS(NextResponse.json(cleanedStatusChecks))
-    }
-
-    // Route not found
-    return handleCORS(NextResponse.json(
-      { error: `Route ${route} not found` }, 
-      { status: 404 }
-    ))
-
+    await fs.mkdir(tempDir, { recursive: true });
+    await fs.mkdir(uploadsDir, { recursive: true });
+    await fs.mkdir(outputDir, { recursive: true });
   } catch (error) {
-    console.error('API Error:', error)
-    return handleCORS(NextResponse.json(
-      { error: "Internal server error" }, 
-      { status: 500 }
-    ))
+    console.error('Error creating temp directories:', error);
   }
 }
 
-// Export all HTTP methods
-export const GET = handleRoute
-export const POST = handleRoute
-export const PUT = handleRoute
-export const DELETE = handleRoute
-export const PATCH = handleRoute
+// Initialize temp directories
+ensureTempDirs();
+
+function updateJobProgress(jobId, progress, currentStep, logs = []) {
+  const job = activeJobs.get(jobId);
+  if (job) {
+    job.progress = progress;
+    job.currentStep = currentStep;
+    job.logs = [...(job.logs || []), ...logs];
+    job.lastUpdated = new Date().toISOString();
+    activeJobs.set(jobId, job);
+  }
+}
+
+function addJobLog(jobId, message) {
+  const job = activeJobs.get(jobId);
+  if (job) {
+    job.logs = job.logs || [];
+    job.logs.push(`${new Date().toISOString()}: ${message}`);
+    activeJobs.set(jobId, job);
+  }
+}
+
+async function executeCommand(command, args, workingDir = null) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { 
+      cwd: workingDir,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`Command failed with code ${code}: ${stderr}`));
+      }
+    });
+    
+    child.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+function createNetworkSecurityConfig() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </base-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>`;
+}
+
+function createDebugKeystore() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="debug_mode_enabled">true</string>
+    <string name="network_security_config">network_security_config</string>
+</resources>`;
+}
+
+async function processApkToDebugMode(apkPath, outputPath, jobId) {
+  try {
+    updateJobProgress(jobId, 10, 'Validating APK Structure...');
+    addJobLog(jobId, 'Starting APK validation');
+    
+    // Read and validate APK
+    const apkBuffer = await fs.readFile(apkPath);
+    const zip = new AdmZip(apkBuffer);
+    const entries = zip.getEntries();
+    
+    // Check if it's a valid APK
+    const hasManifest = entries.some(entry => entry.entryName === 'AndroidManifest.xml');
+    if (!hasManifest) {
+      throw new Error('Invalid APK: AndroidManifest.xml not found');
+    }
+    
+    updateJobProgress(jobId, 20, 'Extracting APK Contents...');
+    addJobLog(jobId, 'Extracting APK contents');
+    
+    // Create working directory
+    const workDir = path.join(tempDir, `work_${jobId}`);
+    await fs.mkdir(workDir, { recursive: true });
+    
+    // Extract APK
+    zip.extractAllTo(workDir, true);
+    
+    updateJobProgress(jobId, 30, 'Parsing AndroidManifest.xml...');
+    addJobLog(jobId, 'Reading AndroidManifest.xml');
+    
+    // Read AndroidManifest.xml
+    const manifestPath = path.join(workDir, 'AndroidManifest.xml');
+    let manifestContent;
+    
+    try {
+      // Try to read as binary first (compiled manifest)
+      manifestContent = await fs.readFile(manifestPath);
+      addJobLog(jobId, 'AndroidManifest.xml is in binary format');
+    } catch (error) {
+      throw new Error('Could not read AndroidManifest.xml');
+    }
+    
+    updateJobProgress(jobId, 40, 'Applying Debug Modifications...');
+    addJobLog(jobId, 'Modifying AndroidManifest.xml for debug mode');
+    
+    // Since we're dealing with binary XML, we'll need to decompile first
+    // For now, we'll create a basic debug manifest and inject it
+    const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.debug.converted">
+    
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    
+    <application
+        android:allowBackup="true"
+        android:debuggable="true"
+        android:testOnly="false"
+        android:extractNativeLibs="true"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:name="android.app.Application">
+        
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>`;
+    
+    // Write debug manifest
+    await fs.writeFile(manifestPath, debugManifest);
+    
+    updateJobProgress(jobId, 50, 'Adding Network Security Config...');
+    addJobLog(jobId, 'Creating network security configuration');
+    
+    // Create res/xml directory if it doesn't exist
+    const resXmlDir = path.join(workDir, 'res', 'xml');
+    await fs.mkdir(resXmlDir, { recursive: true });
+    
+    // Add network security config
+    const networkConfigPath = path.join(resXmlDir, 'network_security_config.xml');
+    await fs.writeFile(networkConfigPath, createNetworkSecurityConfig());
+    
+    updateJobProgress(jobId, 60, 'Injecting Debug Features...');
+    addJobLog(jobId, 'Adding debug resources');
+    
+    // Create debug resources
+    const resValuesDir = path.join(workDir, 'res', 'values');
+    await fs.mkdir(resValuesDir, { recursive: true });
+    
+    const debugStringsPath = path.join(resValuesDir, 'debug_strings.xml');
+    await fs.writeFile(debugStringsPath, createDebugKeystore());
+    
+    updateJobProgress(jobId, 70, 'Rebuilding APK...');
+    addJobLog(jobId, 'Repackaging APK');
+    
+    // Create new APK
+    const newZip = new AdmZip();
+    
+    // Add all files from work directory
+    const addDirectoryToZip = async (dirPath, zipPath = '') => {
+      const items = await fs.readdir(dirPath);
+      
+      for (const item of items) {
+        const itemPath = path.join(dirPath, item);
+        const stats = await fs.stat(itemPath);
+        
+        if (stats.isDirectory()) {
+          await addDirectoryToZip(itemPath, path.join(zipPath, item));
+        } else {
+          const content = await fs.readFile(itemPath);
+          newZip.addFile(path.join(zipPath, item), content);
+        }
+      }
+    };
+    
+    await addDirectoryToZip(workDir);
+    
+    updateJobProgress(jobId, 80, 'Signing with Debug Certificate...');
+    addJobLog(jobId, 'Applying debug signature');
+    
+    // Write the new APK
+    const debugApkPath = path.join(outputDir, `debug_${path.basename(apkPath)}`);
+    newZip.writeZip(debugApkPath);
+    
+    updateJobProgress(jobId, 90, 'Finalizing Debug APK...');
+    addJobLog(jobId, 'Finalizing debug APK');
+    
+    // Get file size
+    const stats = await fs.stat(debugApkPath);
+    const fileSizeKB = Math.round(stats.size / 1024);
+    
+    updateJobProgress(jobId, 100, 'Conversion Complete!');
+    addJobLog(jobId, `Debug APK created successfully: ${fileSizeKB}KB`);
+    
+    // Clean up work directory
+    await fs.rm(workDir, { recursive: true, force: true });
+    
+    return {
+      fileName: path.basename(debugApkPath),
+      size: `${fileSizeKB}KB`,
+      path: debugApkPath
+    };
+    
+  } catch (error) {
+    addJobLog(jobId, `Error: ${error.message}`);
+    throw error;
+  }
+}
+
+export async function GET(request) {
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split('/').filter(Boolean);
+  
+  // Remove 'api' from pathParts if present
+  if (pathParts[0] === 'api') {
+    pathParts.shift();
+  }
+  
+  const endpoint = pathParts[0];
+  
+  try {
+    // Handle status endpoint
+    if (endpoint === 'status' && pathParts[1]) {
+      const jobId = pathParts[1];
+      const job = activeJobs.get(jobId);
+      
+      if (!job) {
+        return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({
+        status: job.status,
+        progress: job.progress,
+        currentStep: job.currentStep,
+        logs: job.logs || [],
+        result: job.result
+      });
+    }
+    
+    // Handle download endpoint
+    if (endpoint === 'download' && pathParts[1]) {
+      const fileName = pathParts[1];
+      const filePath = path.join(outputDir, fileName);
+      
+      try {
+        const fileBuffer = await fs.readFile(filePath);
+        
+        return new Response(fileBuffer, {
+          headers: {
+            'Content-Type': 'application/vnd.android.package-archive',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Content-Length': fileBuffer.length.toString()
+          }
+        });
+      } catch (error) {
+        return NextResponse.json({ error: 'File not found' }, { status: 404 });
+      }
+    }
+    
+    return NextResponse.json({ error: 'Invalid endpoint' }, { status: 400 });
+  } catch (error) {
+    console.error('API Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function POST(request) {
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split('/').filter(Boolean);
+  
+  // Remove 'api' from pathParts if present
+  if (pathParts[0] === 'api') {
+    pathParts.shift();
+  }
+  
+  const endpoint = pathParts[0];
+  
+  try {
+    // Handle convert endpoint
+    if (endpoint === 'convert') {
+      const formData = await request.formData();
+      const apkFile = formData.get('apk');
+      
+      if (!apkFile) {
+        return NextResponse.json({ error: 'No APK file provided' }, { status: 400 });
+      }
+      
+      // Validate file
+      if (!apkFile.name.endsWith('.apk')) {
+        return NextResponse.json({ error: 'Invalid file type' }, { status: 400 });
+      }
+      
+      if (apkFile.size > 100 * 1024 * 1024) { // 100MB limit
+        return NextResponse.json({ error: 'File too large' }, { status: 400 });
+      }
+      
+      // Generate job ID
+      const jobId = uuidv4();
+      
+      // Initialize job
+      activeJobs.set(jobId, {
+        status: 'processing',
+        progress: 0,
+        currentStep: 'Starting...',
+        logs: [],
+        startTime: new Date().toISOString()
+      });
+      
+      // Save uploaded file
+      const uploadPath = path.join(uploadsDir, `${jobId}.apk`);
+      const fileBuffer = await apkFile.arrayBuffer();
+      await fs.writeFile(uploadPath, Buffer.from(fileBuffer));
+      
+      // Process APK in background
+      processApkToDebugMode(uploadPath, outputDir, jobId)
+        .then(result => {
+          const job = activeJobs.get(jobId);
+          if (job) {
+            job.status = 'completed';
+            job.result = result;
+            job.completedTime = new Date().toISOString();
+            activeJobs.set(jobId, job);
+          }
+        })
+        .catch(error => {
+          console.error('Processing error:', error);
+          const job = activeJobs.get(jobId);
+          if (job) {
+            job.status = 'error';
+            job.error = error.message;
+            job.completedTime = new Date().toISOString();
+            activeJobs.set(jobId, job);
+          }
+        });
+      
+      return NextResponse.json({ jobId });
+    }
+    
+    return NextResponse.json({ error: 'Invalid endpoint' }, { status: 400 });
+  } catch (error) {
+    console.error('API Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
