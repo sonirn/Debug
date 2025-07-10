@@ -49,14 +49,14 @@ async function updateJobProgress(jobId, progress, currentStep, logs = []) {
 
 async function addJobLog(jobId, message) {
   try {
-    const jobRef = adminDb.collection('apk_jobs').doc(jobId);
-    const jobDoc = await jobRef.get();
+    const jobRef = doc(db, 'apk_jobs', jobId);
+    const jobDoc = await getDoc(jobRef);
     
-    if (jobDoc.exists) {
+    if (jobDoc.exists()) {
       const existingData = jobDoc.data();
       const updatedLogs = [...(existingData.logs || []), `${new Date().toISOString()}: ${message}`];
       
-      await jobRef.update({
+      await updateDoc(jobRef, {
         logs: updatedLogs
       });
     }
