@@ -289,21 +289,18 @@ export async function GET(request) {
       const jobId = pathParts[1];
       
       try {
-        const jobRef = doc(db, 'apk_jobs', jobId);
-        const jobDoc = await getDoc(jobRef);
+        const job = jobs.get(jobId);
         
-        if (!jobDoc.exists()) {
+        if (!job) {
           return NextResponse.json({ error: 'Job not found' }, { status: 404 });
         }
         
-        const jobData = jobDoc.data();
-        
         return NextResponse.json({
-          status: jobData.status,
-          progress: jobData.progress,
-          currentStep: jobData.currentStep,
-          logs: jobData.logs || [],
-          result: jobData.result
+          status: job.status,
+          progress: job.progress,
+          currentStep: job.currentStep,
+          logs: job.logs || [],
+          result: job.result
         });
       } catch (error) {
         console.error('Error fetching job status:', error);
