@@ -1,6 +1,9 @@
 // Firebase Integration Test for APK Debug Mode Converter
 // Tests the Firebase Admin SDK authentication and Firestore connectivity
 
+// Load environment variables
+require('dotenv').config();
+
 const { adminDb } = require('./lib/firebase-admin.js');
 
 async function testFirebaseConnection() {
