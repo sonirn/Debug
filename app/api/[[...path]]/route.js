@@ -372,31 +372,11 @@ export async function POST(request) {
       // Process APK in background
       processApkToDebugMode(uploadPath, outputDir, jobId)
         .then(async (result) => {
-          try {
-            const job = jobs.get(jobId);
-            if (job) {
-              job.status = 'completed';
-              job.result = result;
-              job.completedTime = new Date().toISOString();
-              jobs.set(jobId, job);
-            }
-          } catch (error) {
-            console.error('Error updating job completion:', error);
-          }
+          await dbService.completeJob(jobId, result);
         })
         .catch(async (error) => {
           console.error('Processing error:', error);
-          try {
-            const job = jobs.get(jobId);
-            if (job) {
-              job.status = 'error';
-              job.error = error.message;
-              job.completedTime = new Date().toISOString();
-              jobs.set(jobId, job);
-            }
-          } catch (updateError) {
-            console.error('Error updating job error:', updateError);
-          }
+          await dbService.errorJob(jobId, error.message);
         });
       
       return NextResponse.json({ jobId });
