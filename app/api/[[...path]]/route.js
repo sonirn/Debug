@@ -363,6 +363,12 @@ export async function POST(request) {
   try {
     // Handle convert endpoint
     if (endpoint === 'convert') {
+      // Check if request has form data
+      const contentType = request.headers.get('content-type') || '';
+      if (!contentType.includes('multipart/form-data')) {
+        return NextResponse.json({ error: 'No APK file provided' }, { status: 400 });
+      }
+      
       const formData = await request.formData();
       const apkFile = formData.get('apk');
       
@@ -384,7 +390,8 @@ export async function POST(request) {
       
       // Initialize job in Firebase
       try {
-        await adminDb.collection('apk_jobs').doc(jobId).set({
+        const jobRef = doc(db, 'apk_jobs', jobId);
+        await setDoc(jobRef, {
           status: 'processing',
           progress: 0,
           currentStep: 'Starting...',
@@ -407,7 +414,8 @@ export async function POST(request) {
       processApkToDebugMode(uploadPath, outputDir, jobId)
         .then(async (result) => {
           try {
-            await adminDb.collection('apk_jobs').doc(jobId).update({
+            const jobRef = doc(db, 'apk_jobs', jobId);
+            await updateDoc(jobRef, {
               status: 'completed',
               result: result,
               completedTime: new Date().toISOString()
@@ -419,7 +427,8 @@ export async function POST(request) {
         .catch(async (error) => {
           console.error('Processing error:', error);
           try {
-            await adminDb.collection('apk_jobs').doc(jobId).update({
+            const jobRef = doc(db, 'apk_jobs', jobId);
+            await updateDoc(jobRef, {
               status: 'error',
               error: error.message,
               completedTime: new Date().toISOString()
