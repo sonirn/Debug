@@ -5,8 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 import AdmZip from 'adm-zip';
 import xml2js from 'xml2js';
 import { spawn } from 'child_process';
-import { db } from '@/lib/firebase';
-import { doc, setDoc, updateDoc, getDoc, collection } from 'firebase/firestore';
+
+// Temporary: Use in-memory storage while fixing Firebase integration
+const jobs = new Map();
 
 // Ensure temp directories exist
 const tempDir = path.join(process.cwd(), 'temp');
