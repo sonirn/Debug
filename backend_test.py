@@ -13,7 +13,7 @@ import zipfile
 from io import BytesIO
 
 # Get base URL from environment or use default
-BASE_URL = os.getenv('NEXT_PUBLIC_BASE_URL', 'https://b0dd5b65-8172-4d88-a475-3641089bf7a7.preview.emergentagent.com')
+BASE_URL = os.getenv('NEXT_PUBLIC_BASE_URL', 'https://e8c451bf-7bc8-4dfe-ba78-a7c07c1818fb.preview.emergentagent.com')
 API_BASE = f"{BASE_URL}/api"
 
 class APKDebugConverterTester:
