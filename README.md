@@ -7,14 +7,14 @@ A powerful web application that converts any APK file into debug mode with all d
 ### Quick Deploy to VPS:
 ```bash
 # Clone and deploy in one command
-curl -fsSL https://raw.githubusercontent.com/YOUR-USERNAME/apk-debug-converter/main/quick-deploy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sonirn/Debug/main/quick-deploy.sh | bash
 ```
 
 ### Or Manual Deploy:
 ```bash
 # Clone repository
-git clone https://github.com/YOUR-USERNAME/apk-debug-converter.git
-cd apk-debug-converter
+git clone https://github.com/sonirn/Debug.git
+cd Debug
 
 # Deploy automatically
 chmod +x deploy.sh
