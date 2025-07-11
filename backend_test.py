@@ -898,6 +898,60 @@ SHA-256-Digest-Manifest: original_manifest_hash
         except Exception as e:
             self.log_test("DEX Preservation Verification", False, f"Exception: {e}")
             
+    def test_dex_preservation(self):
+        """Test that original DEX files are preserved (no empty DEX creation)"""
+        print("\n🧪 Testing DEX File Preservation...")
+        
+        # Create APK with multiple DEX files
+        temp_dir = tempfile.mkdtemp()
+        apk_path = os.path.join(temp_dir, "multi_dex_test.apk")
+        
+        with zipfile.ZipFile(apk_path, 'w', zipfile.ZIP_DEFLATED) as apk:
+            # Add manifest
+            manifest = '''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.test.multidex">
+    <application android:label="MultiDex Test">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>'''
+            apk.writestr("AndroidManifest.xml", manifest)
+            
+            # Add multiple DEX files with different content
+            apk.writestr("classes.dex", b"dex\n035PRIMARY_DEX_CONTENT" + b"" * 100)
+            apk.writestr("classes2.dex", b"dex\n035SECONDARY_DEX_CONTENT" + b"" * 100)
+            apk.writestr("classes3.dex", b"dex\n035TERTIARY_DEX_CONTENT" + b"" * 100)
+            
+        try:
+            # Analyze original structure
+            original_structure = self.analyze_apk_structure(apk_path)
+            original_dex_files = [f for f in original_structure['files'] if f.endswith('.dex')]
+            
+            with open(apk_path, 'rb') as f:
+                files = {'apk': ('multi_dex_test.apk', f, 'application/vnd.android.package-archive')}
+                response = requests.post(f"{API_BASE}/convert", files=files, timeout=30)
+                
+            if response.status_code == 200:
+                job_data = response.json()
+                job_id = job_data.get('jobId')
+                self.log_test("Multi-DEX APK Upload", True, f"Original DEX files: {len(original_dex_files)}")
+                
+                # Monitor and analyze
+                if self.monitor_job_processing(job_id):
+                    self.verify_dex_preservation(job_id, original_dex_files)
+                    
+            else:
+                self.log_test("Multi-DEX APK Upload", False, f"HTTP {response.status_code}")
+                
+        except Exception as e:
+            self.log_test("Multi-DEX APK Processing", False, f"Exception: {e}")
+        finally:
+            if os.path.exists(apk_path):
+                os.remove(apk_path)
     def test_api_endpoints(self):
         """Test basic API endpoints functionality"""
         print("\n🧪 Testing Basic API Endpoints...")
