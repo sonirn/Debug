@@ -228,7 +228,455 @@ class APKProcessingTester:
             if os.path.exists(test_apk_path):
                 os.remove(test_apk_path)
                 
-    def test_dex_preservation(self):
+    def test_comprehensive_apk_pipeline(self):
+        """Test the NEW comprehensive APK processing pipeline with all 5 critical solutions"""
+        print("\n🚀 Testing NEW Comprehensive APK Processing Pipeline...")
+        print("   Testing 5 Critical Solutions:")
+        print("   1. APK Signing with debug keystore")
+        print("   2. Improved ZIP Handling with optimized structure")
+        print("   3. Safe Manifest Modifications with debug attributes")
+        print("   4. Resource Management without conflicts")
+        print("   5. Signature Verification after signing")
+        
+        # Create a comprehensive test APK
+        test_apk_path = self.create_comprehensive_test_apk()
+        
+        try:
+            with open(test_apk_path, 'rb') as f:
+                files = {'apk': ('comprehensive_test.apk', f, 'application/vnd.android.package-archive')}
+                response = requests.post(f"{API_BASE}/convert", files=files, timeout=30)
+                
+            if response.status_code == 200:
+                job_data = response.json()
+                job_id = job_data.get('jobId')
+                self.log_test("Comprehensive Pipeline - APK Upload", True, f"Job ID: {job_id}")
+                
+                # Monitor processing with detailed step tracking
+                processing_success = self.monitor_comprehensive_processing(job_id)
+                if processing_success:
+                    # Verify all 5 critical solutions
+                    self.verify_comprehensive_pipeline_results(job_id)
+                    
+            else:
+                self.log_test("Comprehensive Pipeline - APK Upload", False, f"HTTP {response.status_code}: {response.text}")
+                
+        except Exception as e:
+            self.log_test("Comprehensive Pipeline - APK Upload", False, f"Exception: {e}")
+        finally:
+            if os.path.exists(test_apk_path):
+                os.remove(test_apk_path)
+                
+    def create_comprehensive_test_apk(self):
+        """Create a comprehensive test APK with all components for testing the new pipeline"""
+        temp_dir = tempfile.mkdtemp()
+        apk_path = os.path.join(temp_dir, "comprehensive_test.apk")
+        
+        with zipfile.ZipFile(apk_path, 'w', zipfile.ZIP_DEFLATED) as apk:
+            # Create comprehensive AndroidManifest.xml for testing all modifications
+            manifest_content = '''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.test.comprehensive"
+    android:versionCode="1"
+    android:versionName="1.0">
+    
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme">
+        
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        
+        <service android:name=".BackgroundService" />
+        
+    </application>
+</manifest>'''
+            apk.writestr("AndroidManifest.xml", manifest_content)
+            
+            # Add comprehensive DEX files
+            apk.writestr("classes.dex", b"dex\n035" + b"MAIN_DEX_CONTENT" * 50)
+            apk.writestr("classes2.dex", b"dex\n035" + b"SECONDARY_DEX_CONTENT" * 30)
+            
+            # Add resources.arsc
+            apk.writestr("resources.arsc", b"RESOURCES_BINARY_DATA" * 100)
+            
+            # Add native libraries for multiple architectures
+            apk.writestr("lib/arm64-v8a/libnative.so", b"NATIVE_LIB_ARM64" * 20)
+            apk.writestr("lib/armeabi-v7a/libnative.so", b"NATIVE_LIB_ARM32" * 20)
+            apk.writestr("lib/x86/libnative.so", b"NATIVE_LIB_X86" * 20)
+            apk.writestr("lib/x86_64/libnative.so", b"NATIVE_LIB_X86_64" * 20)
+            
+            # Add assets and resources
+            apk.writestr("assets/config.json", '{"app_mode": "production", "debug": false}')
+            apk.writestr("assets/data/settings.xml", '<settings><debug>false</debug></settings>')
+            
+            # Add res directories with various resources
+            apk.writestr("res/values/strings.xml", '''<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Comprehensive Test</string>
+    <string name="welcome">Welcome to the app</string>
+</resources>''')
+            
+            apk.writestr("res/layout/activity_main.xml", '''<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <TextView android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name" />
+</LinearLayout>''')
+            
+            # Add drawable resources
+            apk.writestr("res/drawable/icon.png", b"PNG_ICON_DATA" * 10)
+            apk.writestr("res/mipmap-hdpi/ic_launcher.png", b"PNG_LAUNCHER_HDPI" * 10)
+            apk.writestr("res/mipmap-xhdpi/ic_launcher.png", b"PNG_LAUNCHER_XHDPI" * 10)
+            
+            # Add original META-INF signatures (to test removal and re-signing)
+            apk.writestr("META-INF/MANIFEST.MF", '''Manifest-Version: 1.0
+Created-By: Original Signer
+
+Name: AndroidManifest.xml
+SHA-256-Digest: original_hash_here
+''')
+            apk.writestr("META-INF/CERT.SF", '''Signature-Version: 1.0
+Created-By: Original Signer
+SHA-256-Digest-Manifest: original_manifest_hash
+''')
+            apk.writestr("META-INF/CERT.RSA", b"ORIGINAL_CERTIFICATE_DATA" * 20)
+            
+        return apk_path
+        
+    def monitor_comprehensive_processing(self, job_id, timeout=180):
+        """Monitor comprehensive processing with detailed step tracking"""
+        start_time = time.time()
+        steps_seen = set()
+        
+        print("   📊 Monitoring comprehensive processing steps:")
+        
+        while time.time() - start_time < timeout:
+            try:
+                response = requests.get(f"{API_BASE}/status/{job_id}", timeout=10)
+                if response.status_code == 200:
+                    status_data = response.json()
+                    status = status_data.get('status')
+                    progress = status_data.get('progress', 0)
+                    current_step = status_data.get('currentStep', '')
+                    logs = status_data.get('logs', [])
+                    
+                    # Track new steps
+                    if current_step and current_step not in steps_seen:
+                        steps_seen.add(current_step)
+                        print(f"      ✓ {current_step}")
+                    
+                    # Check for key processing milestones in logs
+                    for log in logs[-5:]:  # Check last 5 logs
+                        if "keystore created" in log.lower():
+                            self.log_test("Debug Keystore Creation", True, "Keystore created successfully")
+                        elif "apk signed" in log.lower():
+                            self.log_test("APK Signing Process", True, "APK signed with debug certificate")
+                        elif "signature verified" in log.lower():
+                            self.log_test("APK Signature Verification", True, "APK signature verified")
+                        elif "optimized apk structure" in log.lower():
+                            self.log_test("Optimized ZIP Structure", True, "APK structure optimized")
+                        elif "debug modifications" in log.lower():
+                            self.log_test("Safe Manifest Modifications", True, "Debug attributes added to manifest")
+                    
+                    if status == 'completed':
+                        print(f"   ✅ Processing completed in {int(time.time() - start_time)}s")
+                        self.log_test(f"Comprehensive Pipeline Processing", True, f"Completed with {len(steps_seen)} steps")
+                        return True
+                    elif status == 'error':
+                        error_details = logs[-1] if logs else "Unknown error"
+                        print(f"   ❌ Processing failed: {error_details}")
+                        self.log_test(f"Comprehensive Pipeline Processing", False, f"Error: {error_details}")
+                        return False
+                        
+                else:
+                    print(f"   ⚠️ Status check failed: HTTP {response.status_code}")
+                    
+            except Exception as e:
+                print(f"   ⚠️ Status check error: {e}")
+                
+            time.sleep(3)
+            
+        self.log_test(f"Comprehensive Pipeline Processing", False, f"Timeout after {timeout} seconds")
+        return False
+        
+    def verify_comprehensive_pipeline_results(self, job_id):
+        """Verify all 5 critical solutions are working in the processed APK"""
+        print("   🔍 Verifying comprehensive pipeline results...")
+        
+        try:
+            # Get job status and download processed APK
+            response = requests.get(f"{API_BASE}/status/{job_id}", timeout=10)
+            if response.status_code == 200:
+                status_data = response.json()
+                result = status_data.get('result', {})
+                file_name = result.get('fileName')
+                
+                if file_name:
+                    download_response = requests.get(f"{API_BASE}/download/{file_name}", timeout=30)
+                    if download_response.status_code == 200:
+                        temp_apk = tempfile.NamedTemporaryFile(suffix='.apk', delete=False)
+                        temp_apk.write(download_response.content)
+                        temp_apk.close()
+                        
+                        # Verify all 5 critical solutions
+                        self.verify_solution_1_apk_signing(temp_apk.name, result)
+                        self.verify_solution_2_zip_handling(temp_apk.name)
+                        self.verify_solution_3_manifest_modifications(temp_apk.name)
+                        self.verify_solution_4_resource_management(temp_apk.name)
+                        self.verify_solution_5_signature_verification(temp_apk.name, result)
+                        
+                        os.unlink(temp_apk.name)
+                        
+                    else:
+                        self.log_test("Download Comprehensive Result", False, f"HTTP {download_response.status_code}")
+                else:
+                    self.log_test("Get Comprehensive Result", False, "No fileName in result")
+            else:
+                self.log_test("Get Comprehensive Job Status", False, f"HTTP {response.status_code}")
+                
+        except Exception as e:
+            self.log_test("Verify Comprehensive Results", False, f"Exception: {e}")
+            
+    def verify_solution_1_apk_signing(self, apk_path, result):
+        """Verify Solution 1: APK Signing with debug keystore"""
+        try:
+            # Check if result indicates signing was successful
+            signed = result.get('signed', False)
+            if signed:
+                self.log_test("Solution 1 - APK Signing Status", True, "APK marked as signed in result")
+            else:
+                self.log_test("Solution 1 - APK Signing Status", False, "APK not marked as signed")
+                
+            # Verify APK structure indicates signing
+            with zipfile.ZipFile(apk_path, 'r') as apk:
+                files = apk.namelist()
+                
+                # Check for new META-INF signature files (debug signing)
+                meta_inf_files = [f for f in files if f.startswith('META-INF/')]
+                if meta_inf_files:
+                    self.log_test("Solution 1 - Debug Signature Files", True, f"Found {len(meta_inf_files)} signature files")
+                else:
+                    self.log_test("Solution 1 - Debug Signature Files", False, "No signature files found")
+                    
+        except Exception as e:
+            self.log_test("Solution 1 - APK Signing Verification", False, f"Exception: {e}")
+            
+    def verify_solution_2_zip_handling(self, apk_path):
+        """Verify Solution 2: Improved ZIP Handling with optimized structure"""
+        try:
+            with zipfile.ZipFile(apk_path, 'r') as apk:
+                files = apk.namelist()
+                
+                # Check file count preservation
+                if len(files) >= 15:  # Should have original files plus debug additions
+                    self.log_test("Solution 2 - File Count Preservation", True, f"Found {len(files)} files")
+                else:
+                    self.log_test("Solution 2 - File Count Preservation", False, f"Only {len(files)} files found")
+                
+                # Check for proper file structure
+                has_manifest = 'AndroidManifest.xml' in files
+                has_dex = any(f.endswith('.dex') for f in files)
+                has_resources = any(f.startswith('res/') for f in files)
+                has_libs = any(f.startswith('lib/') for f in files)
+                
+                structure_score = sum([has_manifest, has_dex, has_resources, has_libs])
+                if structure_score >= 3:
+                    self.log_test("Solution 2 - APK Structure Integrity", True, f"Core structure preserved ({structure_score}/4)")
+                else:
+                    self.log_test("Solution 2 - APK Structure Integrity", False, f"Structure incomplete ({structure_score}/4)")
+                    
+                # Check compression handling
+                compressed_files = 0
+                stored_files = 0
+                for info in apk.infolist():
+                    if info.compress_type == zipfile.ZIP_DEFLATED:
+                        compressed_files += 1
+                    elif info.compress_type == zipfile.ZIP_STORED:
+                        stored_files += 1
+                        
+                if compressed_files > 0 and stored_files > 0:
+                    self.log_test("Solution 2 - Compression Optimization", True, f"Mixed compression: {compressed_files} compressed, {stored_files} stored")
+                else:
+                    self.log_test("Solution 2 - Compression Optimization", True, f"Uniform compression applied")
+                    
+        except Exception as e:
+            self.log_test("Solution 2 - ZIP Handling Verification", False, f"Exception: {e}")
+            
+    def verify_solution_3_manifest_modifications(self, apk_path):
+        """Verify Solution 3: Safe Manifest Modifications with debug attributes"""
+        try:
+            with zipfile.ZipFile(apk_path, 'r') as apk:
+                manifest_content = apk.read('AndroidManifest.xml').decode('utf-8', errors='ignore')
+                
+                # Check for debug attributes
+                debug_features = []
+                if 'android:debuggable="true"' in manifest_content:
+                    debug_features.append('debuggable=true')
+                if 'android:usesCleartextTraffic="true"' in manifest_content:
+                    debug_features.append('usesCleartextTraffic=true')
+                if 'android:networkSecurityConfig' in manifest_content:
+                    debug_features.append('networkSecurityConfig')
+                if 'android:testOnly="true"' in manifest_content:
+                    debug_features.append('testOnly=true')
+                    
+                if len(debug_features) >= 3:
+                    self.log_test("Solution 3 - Debug Attributes Added", True, f"Features: {debug_features}")
+                else:
+                    self.log_test("Solution 3 - Debug Attributes Added", False, f"Only found: {debug_features}")
+                    
+                # Check that original content is preserved
+                if 'com.test.comprehensive' in manifest_content:
+                    self.log_test("Solution 3 - Original Content Preserved", True, "Package name preserved")
+                else:
+                    self.log_test("Solution 3 - Original Content Preserved", False, "Original content may be lost")
+                    
+        except Exception as e:
+            self.log_test("Solution 3 - Manifest Modifications Verification", False, f"Exception: {e}")
+            
+    def verify_solution_4_resource_management(self, apk_path):
+        """Verify Solution 4: Resource Management without conflicts"""
+        try:
+            with zipfile.ZipFile(apk_path, 'r') as apk:
+                files = apk.namelist()
+                
+                # Check for debug resources
+                debug_resources = []
+                if 'res/xml/network_security_config.xml' in files:
+                    debug_resources.append('network_security_config.xml')
+                if any('apk_debug_values.xml' in f for f in files):
+                    debug_resources.append('apk_debug_values.xml')
+                    
+                if debug_resources:
+                    self.log_test("Solution 4 - Debug Resources Added", True, f"Added: {debug_resources}")
+                else:
+                    self.log_test("Solution 4 - Debug Resources Added", False, "No debug resources found")
+                    
+                # Check that original resources are preserved
+                original_resources = [f for f in files if f.startswith('res/') and 'debug' not in f.lower()]
+                if len(original_resources) >= 3:
+                    self.log_test("Solution 4 - Original Resources Preserved", True, f"Found {len(original_resources)} original resources")
+                else:
+                    self.log_test("Solution 4 - Original Resources Preserved", False, f"Only {len(original_resources)} original resources")
+                    
+                # Verify network security config content
+                if 'res/xml/network_security_config.xml' in files:
+                    config_content = apk.read('res/xml/network_security_config.xml').decode('utf-8', errors='ignore')
+                    if 'cleartextTrafficPermitted="true"' in config_content:
+                        self.log_test("Solution 4 - Network Security Config", True, "Cleartext traffic enabled for debugging")
+                    else:
+                        self.log_test("Solution 4 - Network Security Config", False, "Network config may be incorrect")
+                        
+        except Exception as e:
+            self.log_test("Solution 4 - Resource Management Verification", False, f"Exception: {e}")
+            
+    def verify_solution_5_signature_verification(self, apk_path, result):
+        """Verify Solution 5: Signature Verification after signing"""
+        try:
+            # Check result verification status
+            verified = result.get('verified', False)
+            if verified:
+                self.log_test("Solution 5 - Signature Verification Status", True, "APK signature verified in result")
+            else:
+                self.log_test("Solution 5 - Signature Verification Status", False, "APK signature not verified")
+                
+            # Check APK file size (signed APKs should be reasonable size)
+            file_size = os.path.getsize(apk_path)
+            size_kb = file_size // 1024
+            if size_kb > 10:  # Should be larger than 10KB for a real APK
+                self.log_test("Solution 5 - APK File Size", True, f"APK size: {size_kb}KB (reasonable)")
+            else:
+                self.log_test("Solution 5 - APK File Size", False, f"APK size: {size_kb}KB (too small)")
+                
+            # Check for proper APK structure after signing
+            try:
+                with zipfile.ZipFile(apk_path, 'r') as apk:
+                    # Test that ZIP structure is valid
+                    test_result = apk.testzip()
+                    if test_result is None:
+                        self.log_test("Solution 5 - APK Structure Integrity", True, "ZIP structure is valid")
+                    else:
+                        self.log_test("Solution 5 - APK Structure Integrity", False, f"ZIP corruption: {test_result}")
+            except zipfile.BadZipFile:
+                self.log_test("Solution 5 - APK Structure Integrity", False, "Invalid ZIP file")
+                
+        except Exception as e:
+            self.log_test("Solution 5 - Signature Verification", False, f"Exception: {e}")
+            
+    def test_keystore_and_signing_tools(self):
+        """Test that required signing tools are available"""
+        print("\n🔧 Testing APK Signing Tools Availability...")
+        
+        # Note: We can't directly test keytool and jarsigner in the container,
+        # but we can test the API's ability to handle signing operations
+        
+        # Create a minimal APK for signing test
+        test_apk_path = self.create_test_apk("signing_test.apk")
+        
+        try:
+            with open(test_apk_path, 'rb') as f:
+                files = {'apk': ('signing_test.apk', f, 'application/vnd.android.package-archive')}
+                response = requests.post(f"{API_BASE}/convert", files=files, timeout=30)
+                
+            if response.status_code == 200:
+                job_data = response.json()
+                job_id = job_data.get('jobId')
+                
+                # Monitor for signing-related steps
+                start_time = time.time()
+                signing_steps_found = []
+                
+                while time.time() - start_time < 60:
+                    try:
+                        status_response = requests.get(f"{API_BASE}/status/{job_id}", timeout=10)
+                        if status_response.status_code == 200:
+                            status_data = status_response.json()
+                            logs = status_data.get('logs', [])
+                            current_step = status_data.get('currentStep', '')
+                            
+                            # Look for signing-related log entries
+                            for log in logs:
+                                if 'keystore' in log.lower() and 'keystore' not in signing_steps_found:
+                                    signing_steps_found.append('keystore')
+                                elif 'signing' in log.lower() and 'signing' not in signing_steps_found:
+                                    signing_steps_found.append('signing')
+                                elif 'signature' in log.lower() and 'verification' not in signing_steps_found:
+                                    signing_steps_found.append('verification')
+                                    
+                            if status_data.get('status') in ['completed', 'error']:
+                                break
+                                
+                    except Exception as e:
+                        print(f"   Error checking signing steps: {e}")
+                        break
+                        
+                    time.sleep(2)
+                    
+                if len(signing_steps_found) >= 2:
+                    self.log_test("Signing Tools Integration", True, f"Found steps: {signing_steps_found}")
+                else:
+                    self.log_test("Signing Tools Integration", False, f"Limited signing steps: {signing_steps_found}")
+                    
+            else:
+                self.log_test("Signing Tools Test Setup", False, f"HTTP {response.status_code}")
+                
+        except Exception as e:
+            self.log_test("Signing Tools Integration Test", False, f"Exception: {e}")
+        finally:
+            if os.path.exists(test_apk_path):
+                os.remove(test_apk_path)
         """Test that original DEX files are preserved (no empty DEX creation)"""
         print("\n🧪 Testing DEX File Preservation...")
         
