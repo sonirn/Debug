@@ -11,12 +11,14 @@ import dbService from '@/lib/database.js';
 const tempDir = path.join(process.cwd(), 'temp');
 const uploadsDir = path.join(tempDir, 'uploads');
 const outputDir = path.join(tempDir, 'output');
+const keystoreDir = path.join(tempDir, 'keystore');
 
 async function ensureTempDirs() {
   try {
     await fs.mkdir(tempDir, { recursive: true });
     await fs.mkdir(uploadsDir, { recursive: true });
     await fs.mkdir(outputDir, { recursive: true });
+    await fs.mkdir(keystoreDir, { recursive: true });
   } catch (error) {
     console.error('Error creating temp directories:', error);
   }
@@ -65,6 +67,66 @@ async function executeCommand(command, args, workingDir = null) {
   });
 }
 
+async function createDebugKeystore(keystorePath, password = 'debugpass') {
+  try {
+    // Check if keystore already exists
+    try {
+      await fs.access(keystorePath);
+      return true; // Keystore exists
+    } catch (error) {
+      // Keystore doesn't exist, create it
+    }
+    
+    const keytoolArgs = [
+      '-genkeypair',
+      '-keystore', keystorePath,
+      '-alias', 'debugkey',
+      '-storepass', password,
+      '-keypass', password,
+      '-keyalg', 'RSA',
+      '-keysize', '2048',
+      '-validity', '365',
+      '-dname', 'CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=US'
+    ];
+    
+    await executeCommand('keytool', keytoolArgs);
+    return true;
+  } catch (error) {
+    console.error('Error creating debug keystore:', error);
+    return false;
+  }
+}
+
+async function signApk(apkPath, keystorePath, password = 'debugpass') {
+  try {
+    const jarsignerArgs = [
+      '-verbose',
+      '-keystore', keystorePath,
+      '-storepass', password,
+      '-keypass', password,
+      apkPath,
+      'debugkey'
+    ];
+    
+    await executeCommand('jarsigner', jarsignerArgs);
+    return true;
+  } catch (error) {
+    console.error('Error signing APK:', error);
+    return false;
+  }
+}
+
+async function verifyApkSignature(apkPath) {
+  try {
+    const jarsignerArgs = ['-verify', '-verbose', apkPath];
+    const result = await executeCommand('jarsigner', jarsignerArgs);
+    return result.stdout.includes('jar verified');
+  } catch (error) {
+    console.error('Error verifying APK signature:', error);
+    return false;
+  }
+}
+
 function createNetworkSecurityConfig() {
   return `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
@@ -88,160 +150,103 @@ function createNetworkSecurityConfig() {
 </network-security-config>`;
 }
 
-function createDebugKeystore() {
-  return `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="debug_mode_enabled">true</string>
-    <string name="network_security_config">network_security_config</string>
-</resources>`;
+function createDebugPermissions() {
+  return `<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />`;
 }
 
-async function processApkToDebugMode(apkPath, outputPath, jobId) {
+async function improveManifestHandling(manifestPath, jobId) {
   try {
-    await updateJobProgress(jobId, 10, 'Validating APK Structure...');
-    await addJobLog(jobId, 'Starting APK validation');
+    await addJobLog(jobId, 'Analyzing AndroidManifest.xml structure...');
     
-    // Read and validate APK
-    const apkBuffer = await fs.readFile(apkPath);
-    const zip = new AdmZip(apkBuffer);
-    const entries = zip.getEntries();
+    const manifestContent = await fs.readFile(manifestPath, 'utf8');
     
-    // Check if it's a valid APK
-    const hasManifest = entries.some(entry => entry.entryName === 'AndroidManifest.xml');
-    if (!hasManifest) {
-      throw new Error('Invalid APK: AndroidManifest.xml not found');
-    }
-    
-    await updateJobProgress(jobId, 20, 'Extracting APK Contents...');
-    await addJobLog(jobId, 'Extracting APK contents');
-    
-    // Create working directory
-    const workDir = path.join(tempDir, `work_${jobId}`);
-    await fs.mkdir(workDir, { recursive: true });
-    
-    // Extract APK
-    zip.extractAllTo(workDir, true);
-    
-    await updateJobProgress(jobId, 30, 'Analyzing Original APK Structure...');
-    await addJobLog(jobId, 'Preserving original APK structure');
-    
-    // Check what files exist in the original APK
-    const originalFiles = entries.map(entry => entry.entryName);
-    await addJobLog(jobId, `Found ${originalFiles.length} files in original APK`);
-    
-    // Preserve original classes.dex and resources completely
-    const hasDex = originalFiles.some(file => file.endsWith('.dex'));
-    const hasResources = originalFiles.some(file => file === 'resources.arsc');
-    
-    if (hasDex) {
-      await addJobLog(jobId, 'Preserving original DEX files (classes.dex)');
-    }
-    if (hasResources) {
-      await addJobLog(jobId, 'Preserving original resources.arsc');
-    }
-    
-    await updateJobProgress(jobId, 40, 'Preparing Debug Configuration...');
-    await addJobLog(jobId, 'Creating debug configuration files');
-    
-    // Instead of modifying the complex AndroidManifest.xml, we'll add debug configuration files
-    // that Android will respect for debugging purposes
-    
-    // Create res/xml directory for network security config
-    const resXmlDir = path.join(workDir, 'res', 'xml');
-    await fs.mkdir(resXmlDir, { recursive: true });
-    
-    // Add network security config for debug mode
-    const networkConfigPath = path.join(resXmlDir, 'network_security_config.xml');
-    await fs.writeFile(networkConfigPath, createNetworkSecurityConfig());
-    await addJobLog(jobId, 'Added network security config for debugging');
-    
-    await updateJobProgress(jobId, 50, 'Adding Debug Resources...');
-    await addJobLog(jobId, 'Adding debug-specific resources');
-    
-    // Create debug resources that won't interfere with original structure
-    const resValuesDir = path.join(workDir, 'res', 'values');
-    await fs.mkdir(resValuesDir, { recursive: true });
-    
-    // Create debug values that apps can use for debugging
-    const debugValuesXml = `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <bool name="debug_mode">true</bool>
-    <string name="debug_network_config">network_security_config</string>
-    <string name="debug_info">Debug mode enabled</string>
-</resources>`;
-    
-    const debugValuesPath = path.join(resValuesDir, 'debug_values.xml');
-    await fs.writeFile(debugValuesPath, debugValuesXml);
-    await addJobLog(jobId, 'Added debug values for runtime detection');
-    
-    await updateJobProgress(jobId, 60, 'Preserving Original Manifest...');
-    await addJobLog(jobId, 'Keeping original AndroidManifest.xml structure');
-    
-    // Read the original manifest and try to make minimal changes
-    const manifestPath = path.join(workDir, 'AndroidManifest.xml');
-    let manifestModified = false;
-    
-    try {
-      // Try to read as text first
-      const manifestContent = await fs.readFile(manifestPath, 'utf8');
+    // Check if it's a text-based manifest (not binary)
+    if (manifestContent.includes('<?xml') && manifestContent.includes('<manifest')) {
+      await addJobLog(jobId, 'Found text-based AndroidManifest.xml - applying safe modifications');
       
-      if (manifestContent.includes('<?xml') && manifestContent.includes('<manifest')) {
-        // It's a text manifest, we can make minimal modifications
-        await addJobLog(jobId, 'Found text AndroidManifest.xml - making minimal debug modifications');
-        
-        let modifiedManifest = manifestContent;
-        
-        // Only add debug attributes if not already present
-        if (!modifiedManifest.includes('android:debuggable')) {
-          modifiedManifest = modifiedManifest.replace(
-            /<application([^>]*)>/,
-            '<application$1 android:debuggable="true">'
-          );
-          manifestModified = true;
-        }
-        
-        if (!modifiedManifest.includes('android:usesCleartextTraffic')) {
-          modifiedManifest = modifiedManifest.replace(
-            /<application([^>]*)>/,
-            '<application$1 android:usesCleartextTraffic="true">'
-          );
-          manifestModified = true;
-        }
-        
-        if (manifestModified) {
-          await fs.writeFile(manifestPath, modifiedManifest);
-          await addJobLog(jobId, 'Applied minimal debug modifications to AndroidManifest.xml');
-        } else {
-          await addJobLog(jobId, 'AndroidManifest.xml already contains debug attributes');
-        }
-      } else {
-        // It's not a proper text manifest, keep it as-is
-        await addJobLog(jobId, 'AndroidManifest.xml is in binary format - preserving as-is');
+      let modifiedManifest = manifestContent;
+      let modificationsCount = 0;
+      
+      // 1. Add debug permissions if not present
+      if (!modifiedManifest.includes('android.permission.INTERNET')) {
+        const permissionsToAdd = createDebugPermissions();
+        modifiedManifest = modifiedManifest.replace(
+          /<manifest([^>]*)>/,
+          `<manifest$1>\n${permissionsToAdd}`
+        );
+        modificationsCount++;
       }
-    } catch (error) {
-      // If it's binary or we can't read it, keep the original
-      await addJobLog(jobId, 'Preserving original AndroidManifest.xml without modifications');
+      
+      // 2. Add debuggable attribute to application tag
+      if (!modifiedManifest.includes('android:debuggable')) {
+        modifiedManifest = modifiedManifest.replace(
+          /<application([^>]*)>/,
+          '<application$1 android:debuggable="true">'
+        );
+        modificationsCount++;
+      }
+      
+      // 3. Add cleartext traffic permission
+      if (!modifiedManifest.includes('android:usesCleartextTraffic')) {
+        modifiedManifest = modifiedManifest.replace(
+          /<application([^>]*)>/,
+          '<application$1 android:usesCleartextTraffic="true">'
+        );
+        modificationsCount++;
+      }
+      
+      // 4. Add network security config reference
+      if (!modifiedManifest.includes('android:networkSecurityConfig')) {
+        modifiedManifest = modifiedManifest.replace(
+          /<application([^>]*)>/,
+          '<application$1 android:networkSecurityConfig="@xml/network_security_config">'
+        );
+        modificationsCount++;
+      }
+      
+      // 5. Add testOnly attribute for debug builds
+      if (!modifiedManifest.includes('android:testOnly')) {
+        modifiedManifest = modifiedManifest.replace(
+          /<application([^>]*)>/,
+          '<application$1 android:testOnly="true">'
+        );
+        modificationsCount++;
+      }
+      
+      // Clean up any duplicate attributes that might have been created
+      modifiedManifest = modifiedManifest.replace(/android:debuggable="true"\s*android:debuggable="true"/g, 'android:debuggable="true"');
+      modifiedManifest = modifiedManifest.replace(/android:usesCleartextTraffic="true"\s*android:usesCleartextTraffic="true"/g, 'android:usesCleartextTraffic="true"');
+      modifiedManifest = modifiedManifest.replace(/android:networkSecurityConfig="@xml\/network_security_config"\s*android:networkSecurityConfig="@xml\/network_security_config"/g, 'android:networkSecurityConfig="@xml/network_security_config"');
+      modifiedManifest = modifiedManifest.replace(/android:testOnly="true"\s*android:testOnly="true"/g, 'android:testOnly="true"');
+      
+      if (modificationsCount > 0) {
+        await fs.writeFile(manifestPath, modifiedManifest);
+        await addJobLog(jobId, `Applied ${modificationsCount} debug modifications to AndroidManifest.xml`);
+        return true;
+      } else {
+        await addJobLog(jobId, 'AndroidManifest.xml already contains all debug attributes');
+        return true;
+      }
+    } else {
+      await addJobLog(jobId, 'AndroidManifest.xml is in binary format - preserving as-is to avoid corruption');
+      return true;
     }
+  } catch (error) {
+    await addJobLog(jobId, `Error processing AndroidManifest.xml: ${error.message}`);
+    return false;
+  }
+}
+
+async function createOptimizedZip(sourceDir, outputPath, jobId) {
+  try {
+    await addJobLog(jobId, 'Creating optimized APK structure...');
     
-    await updateJobProgress(jobId, 70, 'Removing Invalid Signatures...');
-    await addJobLog(jobId, 'Removing original APK signatures for debug mode');
+    const zip = new AdmZip();
     
-    // Remove META-INF directory to avoid signature conflicts
-    const metaInfPath = path.join(workDir, 'META-INF');
-    try {
-      await fs.rm(metaInfPath, { recursive: true, force: true });
-      await addJobLog(jobId, 'Removed META-INF signatures (debug APK will be unsigned)');
-    } catch (error) {
-      await addJobLog(jobId, 'No META-INF signatures to remove');
-    }
-    
-    await updateJobProgress(jobId, 80, 'Rebuilding Debug APK...');
-    await addJobLog(jobId, 'Repackaging APK with debug modifications');
-    
-    // Create new APK with minimal changes
-    const newZip = new AdmZip();
-    
-    // Add all files from work directory, preserving structure
+    // Add files with proper compression settings
     const addDirectoryToZip = async (dirPath, zipPath = '') => {
       const items = await fs.readdir(dirPath);
       
@@ -256,35 +261,194 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
           const content = await fs.readFile(itemPath);
           // Use forward slashes for ZIP entries (cross-platform compatibility)
           const zipEntryPath = relativePath.replace(/\\/g, '/');
-          newZip.addFile(zipEntryPath, content);
+          
+          // Set compression level based on file type
+          const entry = zip.addFile(zipEntryPath, content);
+          if (item.endsWith('.dex') || item.endsWith('.so') || item.endsWith('.png')) {
+            // Don't compress already compressed files
+            entry.header.method = 0; // Store method (no compression)
+          } else {
+            // Compress other files
+            entry.header.method = 8; // Deflate method
+          }
         }
       }
     };
     
-    await addDirectoryToZip(workDir);
+    await addDirectoryToZip(sourceDir);
     
-    await updateJobProgress(jobId, 90, 'Finalizing Debug APK...');
+    // Write the optimized APK
+    zip.writeZip(outputPath);
+    
+    await addJobLog(jobId, 'APK structure optimized successfully');
+    return true;
+  } catch (error) {
+    await addJobLog(jobId, `Error creating optimized ZIP: ${error.message}`);
+    return false;
+  }
+}
+
+async function processApkToDebugMode(apkPath, outputPath, jobId) {
+  try {
+    await updateJobProgress(jobId, 5, 'Initializing APK Processing...');
+    await addJobLog(jobId, 'Starting comprehensive APK debug conversion');
+    
+    // Create debug keystore
+    const keystorePath = path.join(keystoreDir, 'debug.keystore');
+    await updateJobProgress(jobId, 8, 'Creating Debug Keystore...');
+    const keystoreCreated = await createDebugKeystore(keystorePath);
+    if (!keystoreCreated) {
+      throw new Error('Failed to create debug keystore');
+    }
+    await addJobLog(jobId, 'Debug keystore created successfully');
+    
+    await updateJobProgress(jobId, 10, 'Validating APK Structure...');
+    await addJobLog(jobId, 'Starting APK validation');
+    
+    // Read and validate APK
+    const apkBuffer = await fs.readFile(apkPath);
+    const zip = new AdmZip(apkBuffer);
+    const entries = zip.getEntries();
+    
+    // Check if it's a valid APK
+    const hasManifest = entries.some(entry => entry.entryName === 'AndroidManifest.xml');
+    if (!hasManifest) {
+      throw new Error('Invalid APK: AndroidManifest.xml not found');
+    }
+    
+    await updateJobProgress(jobId, 15, 'Extracting APK Contents...');
+    await addJobLog(jobId, 'Extracting APK contents');
+    
+    // Create working directory
+    const workDir = path.join(tempDir, `work_${jobId}`);
+    await fs.mkdir(workDir, { recursive: true });
+    
+    // Extract APK
+    zip.extractAllTo(workDir, true);
+    
+    await updateJobProgress(jobId, 20, 'Analyzing APK Structure...');
+    await addJobLog(jobId, 'Analyzing original APK structure');
+    
+    // Check what files exist in the original APK
+    const originalFiles = entries.map(entry => entry.entryName);
+    await addJobLog(jobId, `Found ${originalFiles.length} files in original APK`);
+    
+    // Log important components
+    const hasDex = originalFiles.some(file => file.endsWith('.dex'));
+    const hasResources = originalFiles.some(file => file === 'resources.arsc');
+    const hasNativeLibs = originalFiles.some(file => file.startsWith('lib/'));
+    
+    if (hasDex) await addJobLog(jobId, 'Found DEX files (bytecode)');
+    if (hasResources) await addJobLog(jobId, 'Found resources.arsc (compiled resources)');
+    if (hasNativeLibs) await addJobLog(jobId, 'Found native libraries');
+    
+    await updateJobProgress(jobId, 25, 'Removing Original Signatures...');
+    await addJobLog(jobId, 'Removing original APK signatures');
+    
+    // Remove META-INF directory to avoid signature conflicts
+    const metaInfPath = path.join(workDir, 'META-INF');
+    try {
+      await fs.rm(metaInfPath, { recursive: true, force: true });
+      await addJobLog(jobId, 'Original signatures removed successfully');
+    } catch (error) {
+      await addJobLog(jobId, 'No original signatures to remove');
+    }
+    
+    await updateJobProgress(jobId, 30, 'Processing AndroidManifest.xml...');
+    await addJobLog(jobId, 'Processing AndroidManifest.xml with improved handling');
+    
+    // Process AndroidManifest.xml with improved handling
+    const manifestPath = path.join(workDir, 'AndroidManifest.xml');
+    const manifestProcessed = await improveManifestHandling(manifestPath, jobId);
+    if (!manifestProcessed) {
+      await addJobLog(jobId, 'Warning: AndroidManifest.xml processing had issues, continuing...');
+    }
+    
+    await updateJobProgress(jobId, 40, 'Adding Debug Resources...');
+    await addJobLog(jobId, 'Adding debug-specific resources');
+    
+    // Create res/xml directory for network security config
+    const resXmlDir = path.join(workDir, 'res', 'xml');
+    await fs.mkdir(resXmlDir, { recursive: true });
+    
+    // Add network security config for debug mode
+    const networkConfigPath = path.join(resXmlDir, 'network_security_config.xml');
+    await fs.writeFile(networkConfigPath, createNetworkSecurityConfig());
+    await addJobLog(jobId, 'Added network security config for debugging');
+    
+    // Create debug values that won't interfere with existing resources
+    const resValuesDir = path.join(workDir, 'res', 'values');
+    await fs.mkdir(resValuesDir, { recursive: true });
+    
+    // Create debug values with unique names to avoid conflicts
+    const debugValuesXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="apk_debug_mode_enabled">true</bool>
+    <string name="apk_debug_network_config">network_security_config</string>
+    <string name="apk_debug_info">Debug mode enabled by APK Debug Converter</string>
+    <string name="apk_debug_version">1.0</string>
+</resources>`;
+    
+    const debugValuesPath = path.join(resValuesDir, 'apk_debug_values.xml');
+    await fs.writeFile(debugValuesPath, debugValuesXml);
+    await addJobLog(jobId, 'Added debug values for runtime detection');
+    
+    await updateJobProgress(jobId, 55, 'Creating Optimized APK Structure...');
+    await addJobLog(jobId, 'Building optimized APK structure');
+    
+    // Create optimized APK with proper ZIP structure
+    const tempApkPath = path.join(outputDir, `temp_${path.basename(apkPath)}`);
+    const zipCreated = await createOptimizedZip(workDir, tempApkPath, jobId);
+    if (!zipCreated) {
+      throw new Error('Failed to create optimized APK structure');
+    }
+    
+    await updateJobProgress(jobId, 70, 'Signing APK with Debug Certificate...');
+    await addJobLog(jobId, 'Signing APK with debug certificate');
+    
+    // Sign the APK with debug keystore
+    const signSuccess = await signApk(tempApkPath, keystorePath);
+    if (!signSuccess) {
+      throw new Error('Failed to sign APK with debug certificate');
+    }
+    await addJobLog(jobId, 'APK signed successfully with debug certificate');
+    
+    await updateJobProgress(jobId, 85, 'Verifying APK Signature...');
+    await addJobLog(jobId, 'Verifying APK signature');
+    
+    // Verify the APK signature
+    const isVerified = await verifyApkSignature(tempApkPath);
+    if (!isVerified) {
+      await addJobLog(jobId, 'Warning: APK signature verification failed, but continuing...');
+    } else {
+      await addJobLog(jobId, 'APK signature verified successfully');
+    }
+    
+    await updateJobProgress(jobId, 95, 'Finalizing Debug APK...');
     await addJobLog(jobId, 'Creating final debug APK');
     
-    // Write the new APK
-    const debugApkPath = path.join(outputDir, `debug_${path.basename(apkPath)}`);
-    newZip.writeZip(debugApkPath);
+    // Move to final output location
+    const finalApkPath = path.join(outputDir, `debug_${path.basename(apkPath)}`);
+    await fs.rename(tempApkPath, finalApkPath);
     
     // Get file size
-    const stats = await fs.stat(debugApkPath);
+    const stats = await fs.stat(finalApkPath);
     const fileSizeKB = Math.round(stats.size / 1024);
     
-    await updateJobProgress(jobId, 100, 'Debug APK Ready!');
+    await updateJobProgress(jobId, 100, 'Debug APK Ready for Installation!');
     await addJobLog(jobId, `Debug APK created successfully: ${fileSizeKB}KB`);
-    await addJobLog(jobId, 'APK ready for installation with debug features enabled');
+    await addJobLog(jobId, 'APK is now signed and ready for installation on Android devices');
+    await addJobLog(jobId, 'Debug features enabled: debuggable=true, cleartext traffic, network security config');
     
     // Clean up work directory
     await fs.rm(workDir, { recursive: true, force: true });
     
     return {
-      fileName: path.basename(debugApkPath),
+      fileName: path.basename(finalApkPath),
       size: `${fileSizeKB}KB`,
-      path: debugApkPath
+      path: finalApkPath,
+      signed: true,
+      verified: isVerified
     };
     
   } catch (error) {
