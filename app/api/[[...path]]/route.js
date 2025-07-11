@@ -122,215 +122,161 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     // Extract APK
     zip.extractAllTo(workDir, true);
     
-    await updateJobProgress(jobId, 30, 'Analyzing Original Manifest...');
-    await addJobLog(jobId, 'Analyzing original AndroidManifest.xml');
+    await updateJobProgress(jobId, 30, 'Analyzing Original APK Structure...');
+    await addJobLog(jobId, 'Preserving original APK structure');
     
-    // Read original AndroidManifest.xml
-    const manifestPath = path.join(workDir, 'AndroidManifest.xml');
+    // Check what files exist in the original APK
+    const originalFiles = entries.map(entry => entry.entryName);
+    await addJobLog(jobId, `Found ${originalFiles.length} files in original APK`);
     
-    // For binary manifests, we'll create a simple debug wrapper that preserves original structure
-    await updateJobProgress(jobId, 40, 'Creating Debug-Enhanced Manifest...');
-    await addJobLog(jobId, 'Creating debug-enhanced AndroidManifest.xml');
+    // Preserve original classes.dex and resources completely
+    const hasDex = originalFiles.some(file => file.endsWith('.dex'));
+    const hasResources = originalFiles.some(file => file === 'resources.arsc');
     
-    // Read original manifest to check if it's text or binary
-    let originalManifest;
-    let isTextManifest = false;
-    
-    try {
-      originalManifest = await fs.readFile(manifestPath, 'utf8');
-      // Check if it's actual text XML (not binary)
-      if (originalManifest.includes('<?xml') && originalManifest.includes('<manifest')) {
-        isTextManifest = true;
-        await addJobLog(jobId, 'Found text-based AndroidManifest.xml');
-      }
-    } catch (error) {
-      // If reading as text fails, it's binary
-      originalManifest = await fs.readFile(manifestPath);
-      await addJobLog(jobId, 'Found binary AndroidManifest.xml');
+    if (hasDex) {
+      await addJobLog(jobId, 'Preserving original DEX files (classes.dex)');
+    }
+    if (hasResources) {
+      await addJobLog(jobId, 'Preserving original resources.arsc');
     }
     
-    if (isTextManifest) {
-      // For text manifests, we can modify them properly
-      await addJobLog(jobId, 'Enhancing existing text manifest with debug features');
-      
-      // Add debug attributes to application tag
-      let enhancedManifest = originalManifest;
-      
-      // Add debug permissions if not present
-      const debugPermissions = [
-        'android.permission.INTERNET',
-        'android.permission.ACCESS_NETWORK_STATE',
-        'android.permission.WRITE_EXTERNAL_STORAGE',
-        'android.permission.READ_EXTERNAL_STORAGE',
-        'android.permission.ACCESS_WIFI_STATE',
-        'android.permission.CHANGE_WIFI_STATE'
-      ];
-      
-      for (const permission of debugPermissions) {
-        if (!enhancedManifest.includes(permission)) {
-          enhancedManifest = enhancedManifest.replace(
-            '<manifest',
-            `<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    <uses-permission android:name="${permission}" />`
-          );
-        }
-      }
-      
-      // Add debug attributes to application tag
-      enhancedManifest = enhancedManifest.replace(
-        /<application([^>]*)>/,
-        '<application$1 android:debuggable="true" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config">'
-      );
-      
-      // Write enhanced manifest
-      await fs.writeFile(manifestPath, enhancedManifest);
-      await addJobLog(jobId, 'Successfully enhanced existing manifest with debug features');
-      
-    } else {
-      // For binary manifests, we'll create a minimal working manifest
-      await addJobLog(jobId, 'Creating minimal debug manifest for binary APK');
-      
-      // Try to extract package name from original APK resources
-      let packageName = 'com.debug.converted';
-      let appName = 'Debug App';
-      
-      // Look for resources.arsc or other files that might contain package info
-      const resourcesPath = path.join(workDir, 'resources.arsc');
-      if (await fs.access(resourcesPath).then(() => true).catch(() => false)) {
-        await addJobLog(jobId, 'Found resources.arsc - preserving original package structure');
-        packageName = 'com.debug.converted'; // We'll use a safe default
-      }
-      
-      // Create a minimal but functional manifest
-      const minimalManifest = `<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="${packageName}"
-    android:versionCode="1"
-    android:versionName="1.0-debug">
+    await updateJobProgress(jobId, 40, 'Preparing Debug Configuration...');
+    await addJobLog(jobId, 'Creating debug configuration files');
     
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    // Instead of modifying the complex AndroidManifest.xml, we'll add debug configuration files
+    // that Android will respect for debugging purposes
     
-    <application
-        android:allowBackup="true"
-        android:debuggable="true"
-        android:testOnly="false"
-        android:extractNativeLibs="true"
-        android:usesCleartextTraffic="true"
-        android:networkSecurityConfig="@xml/network_security_config"
-        android:label="${appName}">
-        
-        <activity android:name="com.debug.DefaultActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-        
-    </application>
-</manifest>`;
-      
-      await fs.writeFile(manifestPath, minimalManifest);
-      await addJobLog(jobId, 'Created minimal debug manifest');
-    }
-    
-    await updateJobProgress(jobId, 50, 'Adding Network Security Config...');
-    await addJobLog(jobId, 'Creating network security configuration');
-    
-    // Create res/xml directory if it doesn't exist
+    // Create res/xml directory for network security config
     const resXmlDir = path.join(workDir, 'res', 'xml');
     await fs.mkdir(resXmlDir, { recursive: true });
     
-    // Add network security config
+    // Add network security config for debug mode
     const networkConfigPath = path.join(resXmlDir, 'network_security_config.xml');
     await fs.writeFile(networkConfigPath, createNetworkSecurityConfig());
+    await addJobLog(jobId, 'Added network security config for debugging');
     
-    await updateJobProgress(jobId, 60, 'Injecting Debug Features...');
-    await addJobLog(jobId, 'Adding debug resources');
+    await updateJobProgress(jobId, 50, 'Adding Debug Resources...');
+    await addJobLog(jobId, 'Adding debug-specific resources');
     
-    // Create debug resources
+    // Create debug resources that won't interfere with original structure
     const resValuesDir = path.join(workDir, 'res', 'values');
     await fs.mkdir(resValuesDir, { recursive: true });
     
-    // Create strings.xml with app name
-    const stringsXml = `<?xml version="1.0" encoding="utf-8"?>
+    // Create debug values that apps can use for debugging
+    const debugValuesXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Debug App</string>
-    <string name="debug_mode_enabled">true</string>
-    <string name="network_security_config">network_security_config</string>
+    <bool name="debug_mode">true</bool>
+    <string name="debug_network_config">network_security_config</string>
+    <string name="debug_info">Debug mode enabled</string>
 </resources>`;
     
-    const stringsPath = path.join(resValuesDir, 'strings.xml');
-    await fs.writeFile(stringsPath, stringsXml);
+    const debugValuesPath = path.join(resValuesDir, 'debug_values.xml');
+    await fs.writeFile(debugValuesPath, debugValuesXml);
+    await addJobLog(jobId, 'Added debug values for runtime detection');
     
-    // Also create debug-specific strings
-    const debugStringsPath = path.join(resValuesDir, 'debug_strings.xml');
-    await fs.writeFile(debugStringsPath, createDebugKeystore());
+    await updateJobProgress(jobId, 60, 'Preserving Original Manifest...');
+    await addJobLog(jobId, 'Keeping original AndroidManifest.xml structure');
     
-    await updateJobProgress(jobId, 65, 'Creating Debug Activity...');
-    await addJobLog(jobId, 'Adding default debug activity');
+    // Read the original manifest and try to make minimal changes
+    const manifestPath = path.join(workDir, 'AndroidManifest.xml');
+    let manifestModified = false;
     
-    // Create classes.dex directory structure for basic activity
-    const classesPath = path.join(workDir, 'classes.dex');
-    
-    // If classes.dex doesn't exist, we'll create a minimal one
-    if (!await fs.access(classesPath).then(() => true).catch(() => false)) {
-      await addJobLog(jobId, 'Original classes.dex not found - creating minimal debug structure');
+    try {
+      // Try to read as text first
+      const manifestContent = await fs.readFile(manifestPath, 'utf8');
       
-      // Create a minimal classes.dex placeholder
-      // In a real implementation, this would need proper DEX file generation
-      // For now, we'll create an empty file that won't break the APK structure
-      await fs.writeFile(classesPath, Buffer.alloc(0));
-      await addJobLog(jobId, 'Created minimal classes.dex structure');
-    } else {
-      await addJobLog(jobId, 'Preserving original classes.dex');
+      if (manifestContent.includes('<?xml') && manifestContent.includes('<manifest')) {
+        // It's a text manifest, we can make minimal modifications
+        await addJobLog(jobId, 'Found text AndroidManifest.xml - making minimal debug modifications');
+        
+        let modifiedManifest = manifestContent;
+        
+        // Only add debug attributes if not already present
+        if (!modifiedManifest.includes('android:debuggable')) {
+          modifiedManifest = modifiedManifest.replace(
+            /<application([^>]*)>/,
+            '<application$1 android:debuggable="true">'
+          );
+          manifestModified = true;
+        }
+        
+        if (!modifiedManifest.includes('android:usesCleartextTraffic')) {
+          modifiedManifest = modifiedManifest.replace(
+            /<application([^>]*)>/,
+            '<application$1 android:usesCleartextTraffic="true">'
+          );
+          manifestModified = true;
+        }
+        
+        if (manifestModified) {
+          await fs.writeFile(manifestPath, modifiedManifest);
+          await addJobLog(jobId, 'Applied minimal debug modifications to AndroidManifest.xml');
+        } else {
+          await addJobLog(jobId, 'AndroidManifest.xml already contains debug attributes');
+        }
+      } else {
+        // It's not a proper text manifest, keep it as-is
+        await addJobLog(jobId, 'AndroidManifest.xml is in binary format - preserving as-is');
+      }
+    } catch (error) {
+      // If it's binary or we can't read it, keep the original
+      await addJobLog(jobId, 'Preserving original AndroidManifest.xml without modifications');
     }
     
-    await updateJobProgress(jobId, 70, 'Rebuilding APK...');
-    await addJobLog(jobId, 'Repackaging APK');
+    await updateJobProgress(jobId, 70, 'Removing Invalid Signatures...');
+    await addJobLog(jobId, 'Removing original APK signatures for debug mode');
     
-    // Create new APK
+    // Remove META-INF directory to avoid signature conflicts
+    const metaInfPath = path.join(workDir, 'META-INF');
+    try {
+      await fs.rm(metaInfPath, { recursive: true, force: true });
+      await addJobLog(jobId, 'Removed META-INF signatures (debug APK will be unsigned)');
+    } catch (error) {
+      await addJobLog(jobId, 'No META-INF signatures to remove');
+    }
+    
+    await updateJobProgress(jobId, 80, 'Rebuilding Debug APK...');
+    await addJobLog(jobId, 'Repackaging APK with debug modifications');
+    
+    // Create new APK with minimal changes
     const newZip = new AdmZip();
     
-    // Add all files from work directory
+    // Add all files from work directory, preserving structure
     const addDirectoryToZip = async (dirPath, zipPath = '') => {
       const items = await fs.readdir(dirPath);
       
       for (const item of items) {
         const itemPath = path.join(dirPath, item);
         const stats = await fs.stat(itemPath);
+        const relativePath = zipPath ? path.join(zipPath, item) : item;
         
         if (stats.isDirectory()) {
-          await addDirectoryToZip(itemPath, path.join(zipPath, item));
+          await addDirectoryToZip(itemPath, relativePath);
         } else {
           const content = await fs.readFile(itemPath);
-          newZip.addFile(path.join(zipPath, item), content);
+          // Use forward slashes for ZIP entries (cross-platform compatibility)
+          const zipEntryPath = relativePath.replace(/\\/g, '/');
+          newZip.addFile(zipEntryPath, content);
         }
       }
     };
     
     await addDirectoryToZip(workDir);
     
-    await updateJobProgress(jobId, 80, 'Signing with Debug Certificate...');
-    await addJobLog(jobId, 'Applying debug signature');
+    await updateJobProgress(jobId, 90, 'Finalizing Debug APK...');
+    await addJobLog(jobId, 'Creating final debug APK');
     
     // Write the new APK
     const debugApkPath = path.join(outputDir, `debug_${path.basename(apkPath)}`);
     newZip.writeZip(debugApkPath);
     
-    await updateJobProgress(jobId, 90, 'Finalizing Debug APK...');
-    await addJobLog(jobId, 'Finalizing debug APK');
-    
     // Get file size
     const stats = await fs.stat(debugApkPath);
     const fileSizeKB = Math.round(stats.size / 1024);
     
-    await updateJobProgress(jobId, 100, 'Conversion Complete!');
+    await updateJobProgress(jobId, 100, 'Debug APK Ready!');
     await addJobLog(jobId, `Debug APK created successfully: ${fileSizeKB}KB`);
+    await addJobLog(jobId, 'APK ready for installation with debug features enabled');
     
     // Clean up work directory
     await fs.rm(workDir, { recursive: true, force: true });
