@@ -427,9 +427,21 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     await updateJobProgress(jobId, 95, 'Finalizing Debug APK...');
     await addJobLog(jobId, 'Creating final debug APK');
     
-    // Move to final output location
+    // Move to final output location with better error handling
     const finalApkPath = path.join(outputDir, `debug_${path.basename(apkPath)}`);
-    await fs.rename(tempApkPath, finalApkPath);
+    try {
+      // Remove existing debug APK if it exists
+      await fs.rm(finalApkPath, { force: true });
+      // Move temp APK to final location
+      await fs.rename(tempApkPath, finalApkPath);
+      await addJobLog(jobId, `Debug APK moved to final location: ${path.basename(finalApkPath)}`);
+    } catch (renameError) {
+      await addJobLog(jobId, `Error moving file, copying instead: ${renameError.message}`);
+      // If rename fails, copy the file
+      await fs.copyFile(tempApkPath, finalApkPath);
+      await fs.rm(tempApkPath, { force: true });
+      await addJobLog(jobId, `Debug APK copied to final location: ${path.basename(finalApkPath)}`);
+    }
     
     // Get file size
     const stats = await fs.stat(finalApkPath);
