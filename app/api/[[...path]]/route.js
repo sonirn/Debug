@@ -256,6 +256,18 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     const resValuesDir = path.join(workDir, 'res', 'values');
     await fs.mkdir(resValuesDir, { recursive: true });
     
+    // Create strings.xml with app name
+    const stringsXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Debug App</string>
+    <string name="debug_mode_enabled">true</string>
+    <string name="network_security_config">network_security_config</string>
+</resources>`;
+    
+    const stringsPath = path.join(resValuesDir, 'strings.xml');
+    await fs.writeFile(stringsPath, stringsXml);
+    
+    // Also create debug-specific strings
     const debugStringsPath = path.join(resValuesDir, 'debug_strings.xml');
     await fs.writeFile(debugStringsPath, createDebugKeystore());
     
