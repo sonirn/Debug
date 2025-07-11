@@ -307,6 +307,24 @@ export async function GET(request) {
       }
     }
     
+    // Handle test-mongodb endpoint
+    if (endpoint === 'test-mongodb') {
+      try {
+        const testResult = await dbService.testConnection();
+        return NextResponse.json({ 
+          success: testResult,
+          message: testResult ? 'MongoDB connection successful!' : 'MongoDB connection failed'
+        });
+      } catch (error) {
+        console.error('Error testing MongoDB:', error);
+        return NextResponse.json({ 
+          success: false,
+          message: 'MongoDB test failed',
+          error: error.message 
+        }, { status: 500 });
+      }
+    }
+
     // Handle stats endpoint
     if (endpoint === 'stats') {
       try {
