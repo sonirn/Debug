@@ -27,8 +27,8 @@ print_header() {
 }
 
 # Configuration
-REPO_URL="https://github.com/YOUR-USERNAME/apk-debug-converter.git"
-APP_DIR="apk-debug-converter"
+REPO_URL="https://github.com/sonirn/Debug.git"
+APP_DIR="Debug"
 DOMAIN=${DOMAIN:-$(curl -s ifconfig.me 2>/dev/null || echo "localhost")}
 PORT=${PORT:-3000}
 
