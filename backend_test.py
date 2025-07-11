@@ -933,27 +933,31 @@ SHA-256-Digest-Manifest: original_manifest_hash
             self.log_test("Convert Endpoint - No File", False, f"Exception: {e}")
             
     def run_comprehensive_tests(self):
-        """Run all comprehensive tests for the rewritten APK processing logic"""
-        print("🚀 Starting Comprehensive APK Processing Logic Tests")
+        """Run all comprehensive tests for the NEW APK processing pipeline with 5 critical solutions"""
+        print("🚀 Starting Comprehensive APK Processing Pipeline Tests")
         print("=" * 80)
-        print("Testing Focus: Completely rewritten APK processing logic for parsing issue fix")
-        print("Key Features:")
-        print("  ✓ Preserving Original Structure")
-        print("  ✓ Minimal Manifest Changes") 
-        print("  ✓ No Empty DEX Creation")
-        print("  ✓ Signature Removal")
-        print("  ✓ Conservative Approach")
+        print("Testing Focus: NEW comprehensive APK processing pipeline with 5 critical solutions")
+        print("Critical Solutions Being Tested:")
+        print("  1. ✓ APK Signing - Debug keystore creation and jarsigner signing")
+        print("  2. ✓ Improved ZIP Handling - Optimized APK structure with proper compression")
+        print("  3. ✓ Safe Manifest Modifications - Enhanced AndroidManifest.xml with debug attributes")
+        print("  4. ✓ Resource Management - Better debug resource handling without conflicts")
+        print("  5. ✓ Signature Verification - APK signature validation after signing")
+        print("=" * 80)
+        print("🎯 GOAL: Produce installable debug APK files that resolve parsing package problems")
         print("=" * 80)
         
         # Run all test suites
         self.test_api_endpoints()
+        self.test_keystore_and_signing_tools()
+        self.test_comprehensive_apk_pipeline()
         self.test_apk_upload_and_processing()
         self.test_binary_manifest_handling()
         self.test_dex_preservation()
         
         # Print final results
         print("\n" + "=" * 80)
-        print("🏁 COMPREHENSIVE TEST RESULTS")
+        print("🏁 COMPREHENSIVE APK PROCESSING PIPELINE TEST RESULTS")
         print("=" * 80)
         print(f"Total Tests: {self.total_tests}")
         print(f"✅ Passed: {self.passed_tests}")
@@ -961,14 +965,17 @@ SHA-256-Digest-Manifest: original_manifest_hash
         print(f"Success Rate: {(self.passed_tests/self.total_tests*100):.1f}%")
         
         if self.failed_tests == 0:
-            print("\n🎉 ALL TESTS PASSED! The rewritten APK processing logic is working perfectly!")
-            print("✅ Original APK structure preservation: CONFIRMED")
-            print("✅ Minimal manifest modifications: CONFIRMED") 
-            print("✅ No empty DEX file creation: CONFIRMED")
-            print("✅ Proper signature removal: CONFIRMED")
-            print("✅ Conservative processing approach: CONFIRMED")
+            print("\n🎉 ALL TESTS PASSED! The NEW comprehensive APK processing pipeline is working perfectly!")
+            print("✅ Solution 1 - APK Signing: CONFIRMED")
+            print("✅ Solution 2 - Improved ZIP Handling: CONFIRMED") 
+            print("✅ Solution 3 - Safe Manifest Modifications: CONFIRMED")
+            print("✅ Solution 4 - Resource Management: CONFIRMED")
+            print("✅ Solution 5 - Signature Verification: CONFIRMED")
+            print("\n🚀 RESULT: Debug APK files are properly signed and installable!")
+            print("📱 APK parsing package problems should be resolved!")
         else:
             print(f"\n⚠️  {self.failed_tests} tests failed. Review the issues above.")
+            print("🔧 Some critical solutions may need attention.")
             
         print("\n📋 DETAILED TEST BREAKDOWN:")
         for result in self.test_results:
