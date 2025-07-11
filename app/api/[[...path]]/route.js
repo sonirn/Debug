@@ -122,36 +122,69 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     // Extract APK
     zip.extractAllTo(workDir, true);
     
-    await updateJobProgress(jobId, 30, 'Parsing AndroidManifest.xml...');
-    await addJobLog(jobId, 'Reading AndroidManifest.xml');
+    await updateJobProgress(jobId, 30, 'Analyzing Original Manifest...');
+    await addJobLog(jobId, 'Analyzing original AndroidManifest.xml');
     
-    // Read AndroidManifest.xml
+    // Read original AndroidManifest.xml
     const manifestPath = path.join(workDir, 'AndroidManifest.xml');
     let manifestContent;
+    let originalPackageName = 'com.debug.converted';
+    let originalApplicationName = 'android.app.Application';
+    let originalMainActivity = '.MainActivity';
     
     try {
-      // Try to read as binary first (compiled manifest)
-      manifestContent = await fs.readFile(manifestPath);
-      await addJobLog(jobId, 'AndroidManifest.xml is in binary format');
+      // Try to read as text first (uncompiled manifest)
+      manifestContent = await fs.readFile(manifestPath, 'utf8');
+      await addJobLog(jobId, 'AndroidManifest.xml is in text format - parsing for original info');
+      
+      // Extract package name
+      const packageMatch = manifestContent.match(/package="([^"]+)"/);
+      if (packageMatch) {
+        originalPackageName = packageMatch[1];
+        await addJobLog(jobId, `Found original package: ${originalPackageName}`);
+      }
+      
+      // Extract application name
+      const appNameMatch = manifestContent.match(/android:name="([^"]+)"/);
+      if (appNameMatch) {
+        originalApplicationName = appNameMatch[1];
+        await addJobLog(jobId, `Found original application: ${originalApplicationName}`);
+      }
+      
+      // Extract main activity
+      const activityMatch = manifestContent.match(/<activity[^>]*android:name="([^"]+)"[^>]*>[\s\S]*?<action android:name="android\.intent\.action\.MAIN"/);
+      if (activityMatch) {
+        originalMainActivity = activityMatch[1];
+        await addJobLog(jobId, `Found main activity: ${originalMainActivity}`);
+      }
+      
     } catch (error) {
-      throw new Error('Could not read AndroidManifest.xml');
+      // If it's binary, we'll use the original file as-is and append debug features
+      manifestContent = await fs.readFile(manifestPath);
+      await addJobLog(jobId, 'AndroidManifest.xml is in binary format - preserving original structure');
     }
     
-    await updateJobProgress(jobId, 40, 'Applying Debug Modifications...');
-    await addJobLog(jobId, 'Modifying AndroidManifest.xml for debug mode');
+    await updateJobProgress(jobId, 40, 'Creating Debug-Enhanced Manifest...');
+    await addJobLog(jobId, 'Creating debug-enhanced AndroidManifest.xml');
     
-    // Since we're dealing with binary XML, we'll create a basic debug manifest
+    // Create an enhanced manifest that preserves original structure
     const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.debug.converted">
+    package="${originalPackageName}"
+    android:versionCode="1"
+    android:versionName="1.0-debug">
     
+    <!-- Debug Mode Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     
+    <!-- Debug Mode Application -->
     <application
         android:allowBackup="true"
         android:debuggable="true"
@@ -159,14 +192,31 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:name="android.app.Application">
+        android:name="${originalApplicationName}"
+        android:label="@string/app_name">
         
-        <activity android:name=".MainActivity">
+        <!-- Main Activity -->
+        <activity 
+            android:name="${originalMainActivity}"
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <!-- Debug Activity for testing -->
+        <activity 
+            android:name="com.debug.DebugActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+            
+        <!-- Debug Service -->
+        <service 
+            android:name="com.debug.DebugService"
+            android:exported="false" />
+            
     </application>
 </manifest>`;
     
