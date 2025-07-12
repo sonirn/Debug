@@ -489,8 +489,9 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     
     await updateJobProgress(jobId, 100, 'Debug APK Ready for Installation!');
     await addJobLog(jobId, `Debug APK created successfully: ${fileSizeKB}KB`);
-    await addJobLog(jobId, 'APK is now signed and ready for installation on Android devices');
+    await addJobLog(jobId, 'APK is properly aligned, signed and ready for installation on Android devices');
     await addJobLog(jobId, 'Debug features enabled: debuggable=true, cleartext traffic, network security config');
+    await addJobLog(jobId, 'Installation note: Enable "Install from Unknown Sources" on your Android device');
     
     // Clean up work directory
     await fs.rm(workDir, { recursive: true, force: true });
