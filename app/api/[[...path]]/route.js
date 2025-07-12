@@ -453,7 +453,7 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     }
     await addJobLog(jobId, 'APK signed successfully with debug certificate');
     
-    await updateJobProgress(jobId, 85, 'Verifying APK Signature...');
+    await updateJobProgress(jobId, 88, 'Verifying APK Signature...');
     await addJobLog(jobId, 'Verifying APK signature');
     
     // Verify the APK signature
@@ -465,7 +465,7 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     }
     
     await updateJobProgress(jobId, 95, 'Finalizing Debug APK...');
-    await addJobLog(jobId, 'Creating final debug APK');
+    await addJobLog(jobId, 'Creating final debug APK ready for installation');
     
     // Move to final output location with better error handling
     const finalApkPath = path.join(outputDir, `debug_${path.basename(apkPath)}`);
