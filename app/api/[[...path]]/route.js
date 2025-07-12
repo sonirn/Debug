@@ -116,6 +116,33 @@ async function signApk(apkPath, keystorePath, password = 'debugpass') {
   }
 }
 
+async function alignApk(inputApkPath, outputApkPath, jobId) {
+  try {
+    await addJobLog(jobId, 'Aligning APK for optimal installation performance...');
+    
+    const zipalignArgs = [
+      '-f', // force overwrite
+      '-v', // verbose output
+      '4',  // 4-byte alignment (required for Android)
+      inputApkPath,
+      outputApkPath
+    ];
+    
+    const result = await executeCommand('zipalign', zipalignArgs);
+    await addJobLog(jobId, 'APK alignment completed successfully');
+    
+    // Verify alignment
+    const verifyArgs = ['-c', '-v', '4', outputApkPath];
+    await executeCommand('zipalign', verifyArgs);
+    await addJobLog(jobId, 'APK alignment verification passed');
+    
+    return true;
+  } catch (error) {
+    await addJobLog(jobId, `Error aligning APK: ${error.message}`);
+    return false;
+  }
+}
+
 async function verifyApkSignature(apkPath) {
   try {
     const jarsignerArgs = ['-verify', '-verbose', apkPath];
