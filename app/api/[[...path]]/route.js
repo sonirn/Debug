@@ -424,14 +424,27 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
     await addJobLog(jobId, 'Building optimized APK structure');
     
     // Create optimized APK with proper ZIP structure
-    const tempApkPath = path.join(outputDir, `temp_${path.basename(apkPath)}`);
-    const zipCreated = await createOptimizedZip(workDir, tempApkPath, jobId);
+    const unalignedApkPath = path.join(outputDir, `unaligned_${path.basename(apkPath)}`);
+    const zipCreated = await createOptimizedZip(workDir, unalignedApkPath, jobId);
     if (!zipCreated) {
       throw new Error('Failed to create optimized APK structure');
     }
     
-    await updateJobProgress(jobId, 70, 'Signing APK with Debug Certificate...');
-    await addJobLog(jobId, 'Signing APK with debug certificate');
+    await updateJobProgress(jobId, 65, 'Aligning APK for Installation...');
+    await addJobLog(jobId, 'Performing APK alignment (zipalign) for Android compatibility');
+    
+    // Align APK before signing (CRITICAL for Android installation)
+    const tempApkPath = path.join(outputDir, `temp_${path.basename(apkPath)}`);
+    const alignSuccess = await alignApk(unalignedApkPath, tempApkPath, jobId);
+    if (!alignSuccess) {
+      throw new Error('Failed to align APK - this is required for Android installation');
+    }
+    
+    // Clean up unaligned APK
+    await fs.rm(unalignedApkPath, { force: true });
+    
+    await updateJobProgress(jobId, 75, 'Signing APK with Debug Certificate...');
+    await addJobLog(jobId, 'Signing aligned APK with debug certificate');
     
     // Sign the APK with debug keystore
     const signSuccess = await signApk(tempApkPath, keystorePath);
