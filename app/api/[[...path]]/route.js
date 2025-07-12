@@ -501,7 +501,8 @@ async function processApkToDebugMode(apkPath, outputPath, jobId) {
       size: `${fileSizeKB}KB`,
       path: finalApkPath,
       signed: true,
-      verified: isVerified
+      verified: isVerified,
+      aligned: true
     };
     
   } catch (error) {
