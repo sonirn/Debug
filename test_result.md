@@ -275,6 +275,7 @@ test_plan:
   current_focus: []
   stuck_tasks:
     - "Firebase Firestore integration"
+    - "Comprehensive APK Processing Pipeline - Fixed APK parsing issues"
   test_all: false
   test_priority: "high_first"
 
