@@ -25,7 +25,7 @@ import uuid
 import sys
 
 # Configuration
-BASE_URL = "https://0139c805-c108-44a2-97b0-a3c9155bc8a2.preview.emergentagent.com"
+BASE_URL = "https://27aef6b1-55be-45eb-b516-5e4a6c0da95e.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 class APKProcessingTester:
