@@ -6,7 +6,7 @@ Simple Firebase Connection Test
 import requests
 import json
 
-BASE_URL = "https://27aef6b1-55be-45eb-b516-5e4a6c0da95e.preview.emergentagent.com"
+BASE_URL = "https://8b89266f-5d24-4f09-8477-154515440d13.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 def test_firebase_connection():
